@@ -299,6 +299,19 @@ function parseWholeNumber(value: string) {
   return Number.parseInt(trimmedValue, 10)
 }
 
+function passwordValidationMessage(password: string) {
+  if (!password) {
+    return 'Enter a password.'
+  }
+  if (password.length < 4) {
+    return 'Password must be at least 4 characters.'
+  }
+  if (password !== password.trim()) {
+    return 'Password cannot start or end with a space.'
+  }
+  return ''
+}
+
 function overlaps(startA: string, endA: string, startB: string, endB: string) {
   return dateValue(startA) <= dateValue(endB) && dateValue(startB) <= dateValue(endA)
 }
@@ -436,6 +449,12 @@ function App() {
   const currentAccount = accounts.find((account) => account.name === currentStaff.name)
 
   const handleLogin = () => {
+    const passwordError = passwordValidationMessage(loginPassword)
+    if (passwordError) {
+      setLoginError(passwordError)
+      return
+    }
+
     const account = accounts.find(
       (candidate) =>
         candidate.portal === loginPortal &&
@@ -459,15 +478,23 @@ function App() {
     setLoginPortal(portal)
     const firstAccount = accounts.find((account) => account.portal === portal)
     setLoginName(firstAccount?.name ?? '')
+    setLoginPassword('')
+    setRegisterSuccess('')
     setLoginError('')
   }
 
   const handleRegister = () => {
     const name = registerName.trim()
-    const password = registerPassword.trim()
+    const password = registerPassword
 
-    if (!name || !password) {
-      setRegisterError('Enter a name and password.')
+    if (!name) {
+      setRegisterError('Enter a name.')
+      return
+    }
+
+    const passwordError = passwordValidationMessage(password)
+    if (passwordError) {
+      setRegisterError(passwordError)
       return
     }
 
@@ -493,6 +520,8 @@ function App() {
     setRegisterSuccess(`${name} was added. You can log in now.`)
     setLoginPortal(registerPortal)
     setLoginName(name)
+    setLoginPassword(password)
+    setLoginError('')
     setAuthView('login')
   }
 
@@ -1139,6 +1168,7 @@ function App() {
                   Password
                   <input
                     autoComplete="current-password"
+                    minLength={4}
                     placeholder="Enter password"
                     type="password"
                     value={loginPassword}
@@ -1215,6 +1245,7 @@ function App() {
                 Password
                 <input
                   autoComplete="new-password"
+                  minLength={4}
                   placeholder="Create password"
                   type="password"
                   value={registerPassword}
@@ -1224,6 +1255,7 @@ function App() {
                   }}
                 />
               </label>
+              <p className="field-hint">Use at least 4 characters. Avoid spaces at the start or end.</p>
 
               {registerError && <p className="login-error">{registerError}</p>}
 
