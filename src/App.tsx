@@ -29,7 +29,7 @@ type InventoryStatus =
   | 'Damaged'
   | 'Missing'
 
-type EventStatus = 'Draft' | 'Reserved' | 'Packed' | 'In Use' | 'Completed'
+type EventStatus = 'Draft' | 'Reserved' | 'Packed' | 'Checked Out' | 'Returned' | 'Closed'
 type Role = 'Employer' | 'Inventory Manager' | 'Employee'
 type PortalMode = 'employer' | 'employee'
 
@@ -58,9 +58,12 @@ type EventRecord = {
   location: string
   start: string
   end: string
-  staff: string
+  staff?: string
+  assignedEmployees: string[]
   status: EventStatus
   reservations: Reservation[]
+  packingProgress: Record<string, boolean>
+  returnReport?: Record<string, ReturnLine>
 }
 
 type NotificationRecord = {
@@ -104,6 +107,38 @@ const demoEventIds = new Set(['EVT-2026-001', 'EVT-2026-002', 'EVT-2026-003'])
 
 const storagePrefix = 'event-inventory-system:'
 
+function normalizeEventStatus(status: string): EventStatus {
+  if (status === 'In Use') return 'Checked Out'
+  if (status === 'Completed') return 'Closed'
+  if (
+    status === 'Draft' ||
+    status === 'Reserved' ||
+    status === 'Packed' ||
+    status === 'Checked Out' ||
+    status === 'Returned' ||
+    status === 'Closed'
+  ) {
+    return status
+  }
+  return 'Draft'
+}
+
+function normalizeEventRecord(event: EventRecord & { staff?: string }) {
+  const assignedEmployees =
+    event.assignedEmployees?.length
+      ? event.assignedEmployees
+      : event.staff && event.staff !== 'Unassigned'
+        ? [event.staff]
+        : []
+
+  return {
+    ...event,
+    assignedEmployees,
+    packingProgress: event.packingProgress ?? {},
+    status: normalizeEventStatus(event.status),
+  }
+}
+
 function readStoredValue<T>(key: string, fallback: T) {
   try {
     const storedValue = window.localStorage.getItem(`${storagePrefix}${key}`)
@@ -116,7 +151,9 @@ function readStoredValue<T>(key: string, fallback: T) {
       return (parsedValue as LoginAccount[]).filter((account) => !demoAccountNames.has(account.name)) as T
     }
     if (key === 'events') {
-      return (parsedValue as EventRecord[]).filter((event) => !demoEventIds.has(event.id)) as T
+      return (parsedValue as EventRecord[])
+        .filter((event) => !demoEventIds.has(event.id))
+        .map((event) => normalizeEventRecord(event)) as T
     }
     if (key === 'auditLogs') {
       return (parsedValue as AuditLog[]).filter((log) => !demoAccountNames.has(log.staff)) as T
@@ -282,18 +319,19 @@ const eventFlowSteps = [
   { key: 'Draft', label: 'Draft' },
   { key: 'Reserved', label: 'Reserved' },
   { key: 'Packed', label: 'Packed' },
-  { key: 'In Use', label: 'Checked out' },
+  { key: 'Checked Out', label: 'Checked out' },
+  { key: 'Returned', label: 'Returned' },
+  { key: 'Closed', label: 'Closed' },
 ] as const
 
 function eventStatusLabel(status: EventStatus) {
-  if (status === 'In Use') return 'Checked out'
   return status
 }
 
 function eventStatusTone(status: EventStatus) {
-  if (status === 'Completed') return 'neutral'
+  if (status === 'Closed') return 'neutral'
   if (status === 'Packed') return 'success'
-  if (status === 'In Use') return 'warning'
+  if (status === 'Checked Out' || status === 'Returned') return 'warning'
   return 'info'
 }
 
@@ -301,12 +339,14 @@ function eventStepIndex(status: EventStatus) {
   if (status === 'Draft') return 0
   if (status === 'Reserved') return 1
   if (status === 'Packed') return 2
-  return 3
+  if (status === 'Checked Out') return 3
+  if (status === 'Returned') return 4
+  return 5
 }
 
 function usedAssetIdsForItem(events: EventRecord[], itemId: string, start: string, end: string) {
   return events
-    .filter((event) => event.status !== 'Completed' && overlaps(start, end, event.start, event.end))
+    .filter((event) => event.status !== 'Closed' && overlaps(start, end, event.start, event.end))
     .flatMap((event) => event.reservations)
     .filter((reservation) => reservation.itemId === itemId)
     .flatMap((reservation) => reservation.selectedAssetIds)
@@ -364,9 +404,10 @@ function App() {
     location: 'Training Lab 1',
     start: '2026-06-24',
     end: '2026-06-26',
-    staff: 'Unassigned',
+    assignedEmployees: [],
     status: 'Draft',
     reservations: templates['VEX IQ workshop'],
+    packingProgress: {},
   })
   const [returnLines, setReturnLines] = useState<Record<string, ReturnLine>>({})
   const [checkoutMessage, setCheckoutMessage] = useState('')
@@ -386,7 +427,7 @@ function App() {
     portalMode === 'employee'
       ? navItems.filter((item) => item.id !== 'planner' && item.id !== 'inventory')
       : navItems
-  const assignedEvents = events.filter((event) => event.staff === currentStaff.name)
+  const assignedEvents = events.filter((event) => event.assignedEmployees.includes(currentStaff.name))
   const visibleEvents = portalMode === 'employee' ? assignedEvents : events
   const selectedEvent =
     visibleEvents.find((event) => event.id === selectedEventId) ?? visibleEvents[0]
@@ -494,7 +535,7 @@ function App() {
       .filter(
         (event) =>
           event.id !== excludeEventId &&
-          event.status !== 'Completed' &&
+          event.status !== 'Closed' &&
           overlaps(start, end, event.start, event.end),
       )
       .flatMap((event) => event.reservations)
@@ -523,14 +564,17 @@ function App() {
   })
 
   const hasShortage = plannerLines.some((line) => line.shortage > 0)
-  const activeEvents = events.filter((event) => event.status !== 'Completed')
-  const visibleActiveEvents = visibleEvents.filter((event) => event.status !== 'Completed')
+  const activeEvents = events.filter((event) => event.status !== 'Closed')
+  const visibleActiveEvents = visibleEvents.filter((event) => event.status !== 'Closed')
   const filteredVisibleEvents = visibleEvents.filter((event) => {
-    const matchesSearch = `${event.id} ${event.title} ${event.type} ${event.location} ${event.staff}`
+    const matchesSearch = `${event.id} ${event.title} ${event.type} ${event.location} ${event.assignedEmployees.join(' ')}`
       .toLowerCase()
       .includes(eventSearch.toLowerCase())
     const matchesStatus = eventStatusFilter === 'All' || event.status === eventStatusFilter
-    const matchesStaff = eventStaffFilter === 'All' || event.staff === eventStaffFilter
+    const matchesStaff =
+      eventStaffFilter === 'All' ||
+      event.assignedEmployees.includes(eventStaffFilter) ||
+      (eventStaffFilter === 'Unassigned' && event.assignedEmployees.length === 0)
     return matchesSearch && matchesStatus && matchesStaff
   })
 
@@ -546,9 +590,9 @@ function App() {
     upcoming: visibleEvents.filter((event) => dateValue(event.start) >= dateValue('2026-06-02')).length,
   }
   const profileEvents = portalMode === 'employee' ? assignedEvents : events
-  const profileActiveEvents = profileEvents.filter((event) => event.status !== 'Completed')
+  const profileActiveEvents = profileEvents.filter((event) => event.status !== 'Closed')
   const profilePackedEvents = profileEvents.filter(
-    (event) => event.status === 'Packed' || event.status === 'In Use',
+    (event) => event.status === 'Packed' || event.status === 'Checked Out',
   )
   const profileLogs =
     portalMode === 'employee'
@@ -609,6 +653,34 @@ function App() {
       ...event,
       reservations: event.reservations.filter((reservation) => reservation.itemId !== itemId),
     }))
+  }
+
+  const toggleAssignedEmployee = (employeeName: string) => {
+    setNewEvent((event) => {
+      const isAssigned = event.assignedEmployees.includes(employeeName)
+      return {
+        ...event,
+        assignedEmployees: isAssigned
+          ? event.assignedEmployees.filter((name) => name !== employeeName)
+          : [...event.assignedEmployees, employeeName],
+      }
+    })
+  }
+
+  const togglePackedItem = (eventId: string, itemId: string, packed: boolean) => {
+    setEvents((records) =>
+      records.map((record) =>
+        record.id === eventId
+          ? {
+              ...record,
+              packingProgress: {
+                ...record.packingProgress,
+                [itemId]: packed,
+              },
+            }
+          : record,
+      ),
+    )
   }
 
   const updateInventoryItem = (
@@ -741,30 +813,35 @@ function App() {
     }
 
     const shouldDelete = window.confirm(
-      `Delete ${accountToDelete.name}? Assigned events will be moved to another employee or Unassigned.`,
+      `Delete ${accountToDelete.name}? They will be removed from assigned event teams.`,
     )
     if (!shouldDelete) {
       return
     }
 
-    const remainingEmployees = accounts.filter(
-      (account) => account.name !== accountName && account.portal === 'employee',
-    )
-    const fallbackStaff = remainingEmployees[0]?.name ?? 'Unassigned'
-
     setAccounts((records) => records.filter((account) => account.name !== accountName))
     setEvents((records) =>
       records.map((event) =>
-        event.staff === accountName ? { ...event, staff: fallbackStaff } : event,
+        event.assignedEmployees.includes(accountName)
+          ? {
+              ...event,
+              assignedEmployees: event.assignedEmployees.filter((name) => name !== accountName),
+            }
+          : event,
       ),
     )
     setNotifications((records) =>
       records.filter((notification) => notification.staff !== accountName),
     )
     setNewEvent((record) =>
-      record.staff === accountName ? { ...record, staff: fallbackStaff } : record,
+      record.assignedEmployees.includes(accountName)
+        ? {
+            ...record,
+            assignedEmployees: record.assignedEmployees.filter((name) => name !== accountName),
+          }
+        : record,
     )
-    setUserManagementMessage(`${accountName} deleted. Existing tasks moved to ${fallbackStaff}.`)
+    setUserManagementMessage(`${accountName} deleted and removed from assigned teams.`)
     addLog('Deleted user', `${accountName} was removed from the system.`)
   }
 
@@ -794,25 +871,24 @@ function App() {
       id: newEvent.id.trim() || `EVT-${Date.now()}`,
       status: 'Reserved',
       reservations: reservationsWithAssets,
+      packingProgress: {},
     }
+    const assignedNotifications = eventToAdd.assignedEmployees.map((employeeName, index) => ({
+      id: `note-${Date.now()}-${index}`,
+      staff: employeeName,
+      eventId: eventToAdd.id,
+      title: `Assigned: ${eventToAdd.title}`,
+      message: `${currentStaff.name} assigned you to ${eventToAdd.location}. Open the packing list and item IDs.`,
+      read: false,
+    }))
 
     setEvents((records) => [eventToAdd, ...records])
-    setNotifications((records) => [
-      {
-        id: `note-${Date.now()}`,
-        staff: eventToAdd.staff,
-        eventId: eventToAdd.id,
-        title: `Assigned: ${eventToAdd.title}`,
-        message: `${currentStaff.name} assigned you to ${eventToAdd.location}. Check the packing list and item IDs.`,
-        read: false,
-      },
-      ...records,
-    ])
+    setNotifications((records) => [...assignedNotifications, ...records])
     setSelectedEventId(eventToAdd.id)
     setActiveTab('events')
     addLog(
-      'Confirmed and assigned event',
-      `${eventToAdd.id} assigned to ${eventToAdd.staff} at ${eventToAdd.location}.`,
+      'Confirmed reservation and assigned staff',
+      `${eventToAdd.id} assigned to ${eventToAdd.assignedEmployees.join(', ') || 'no employees'} at ${eventToAdd.location}.`,
     )
   }
 
@@ -828,18 +904,26 @@ function App() {
         id: `note-${Date.now()}-${index}`,
         staff: account.name,
         eventId: event.id,
-        title: `Ready for deployment: ${event.title}`,
-        message: `${currentStaff.name} marked all equipment as packed and ready for ${event.location}.`,
+        title: `Packed and ready: ${event.title}`,
+        message: `${currentStaff.name} marked the shared packing list as packed and ready for ${event.location}.`,
         read: false,
       }))
 
     setEvents((records) =>
       records.map((record) =>
-        record.id === eventId ? { ...record, status: 'Packed' } : record,
+        record.id === eventId
+          ? {
+              ...record,
+              status: 'Packed',
+              packingProgress: Object.fromEntries(
+                record.reservations.map((reservation) => [reservation.itemId, true]),
+              ),
+            }
+          : record,
       ),
     )
     setNotifications((records) => [...employerNotifications, ...records])
-    setCheckoutMessage('Message sent. Employer has been notified that equipment is packed and ready for deployment.')
+    setCheckoutMessage('Message sent. Employer has been notified that equipment is packed and ready.')
     addLog('Packed equipment', `${event.title} equipment marked as packed and ready.`)
   }
 
@@ -851,11 +935,51 @@ function App() {
 
     setEvents((records) =>
       records.map((record) =>
-        record.id === eventId ? { ...record, status: 'In Use' } : record,
+        record.id === eventId ? { ...record, status: 'Checked Out' } : record,
       ),
     )
-    setCheckoutMessage('Equipment checked out. Event is now in use.')
-    addLog('Checked out equipment', `${event.title} equipment moved to In Use.`)
+    setCheckoutMessage('Items checked out for deployment.')
+    addLog('Checked out equipment', `${event.title} equipment moved to Checked Out.`)
+  }
+
+  const submitReturnReport = () => {
+    if (!selectedEvent) {
+      return
+    }
+
+    const report = Object.fromEntries(
+      selectedEvent.reservations.map((reservation) => {
+        const line = returnLines[reservation.itemId] ?? {
+          returned: reservation.quantity,
+          damaged: 0,
+          missing: 0,
+        }
+        return [reservation.itemId, line]
+      }),
+    )
+
+    const employerNotifications = accounts
+      .filter((account) => account.portal === 'employer')
+      .map((account, index) => ({
+        id: `note-${Date.now()}-return-${index}`,
+        staff: account.name,
+        eventId: selectedEvent.id,
+        title: `Return report ready: ${selectedEvent.title}`,
+        message: `${currentStaff.name} submitted the return report for review.`,
+        read: false,
+      }))
+
+    setEvents((records) =>
+      records.map((record) =>
+        record.id === selectedEvent.id
+          ? { ...record, returnReport: report, status: 'Returned' }
+          : record,
+      ),
+    )
+    setNotifications((records) => [...employerNotifications, ...records])
+    addLog('Submitted return report', `${selectedEvent.title} return report submitted for employer review.`)
+    setReturnLines({})
+    setActiveTab('events')
   }
 
   const setReturnValue = (itemId: string, key: keyof ReturnLine, value: string) => {
@@ -874,14 +998,14 @@ function App() {
     }))
   }
 
-  const completeReturn = () => {
+  const closeEvent = () => {
     if (!selectedEvent) {
       return
     }
 
     setInventory((items) =>
       items.map((item) => {
-        const line = returnLines[item.id]
+        const line = selectedEvent.returnReport?.[item.id] ?? returnLines[item.id]
         if (!line) {
           return item
         }
@@ -895,12 +1019,12 @@ function App() {
     )
     setEvents((records) =>
       records.map((record) =>
-        record.id === selectedEvent.id ? { ...record, status: 'Completed' } : record,
+        record.id === selectedEvent.id ? { ...record, status: 'Closed' } : record,
       ),
     )
     addLog(
-      'Returned equipment',
-      `${selectedEvent.title} closed with return notes for ${selectedEvent.reservations.length} item groups.`,
+      'Closed event',
+      `${selectedEvent.title} reviewed and closed with return notes for ${selectedEvent.reservations.length} item groups.`,
     )
     setReturnLines({})
   }
@@ -908,13 +1032,13 @@ function App() {
   const statusForItem = (item: InventoryItem): InventoryStatus => {
     const hasInUse = events.some(
       (event) =>
-        event.status === 'In Use' &&
+        event.status === 'Checked Out' &&
         event.reservations.some((reservation) => reservation.itemId === item.id),
     )
 
     const hasReserved = events.some(
       (event) =>
-        (event.status === 'Reserved' || event.status === 'Packed') &&
+        (event.status === 'Reserved' || event.status === 'Packed' || event.status === 'Returned') &&
         event.reservations.some((reservation) => reservation.itemId === item.id),
     )
 
@@ -1369,9 +1493,9 @@ function App() {
                 {portalMode === 'employer' && <div className="simple-flow">
                   <h2>Simple flow</h2>
                   <ol>
-                    <li>Employer creates event and selects staff in charge.</li>
+                    <li>Employer creates event and assigns a staff team.</li>
                     <li>System checks available Laptop, iPad, VEX IQ, and UARO stock.</li>
-                    <li>Assigned employee sees the task and packing list.</li>
+                    <li>Assigned employees see the shared task and packing list.</li>
                     <li>Employee checks out and returns items after the event.</li>
                   </ol>
                 </div>}
@@ -1532,7 +1656,7 @@ function App() {
                   <span>1</span>
                   <div>
                     <h2>Event details</h2>
-                    <p>Set the event, location, dates, and person in charge.</p>
+                    <p>Set the event, location, dates, and assigned team.</p>
                   </div>
                 </div>
 
@@ -1580,20 +1704,24 @@ function App() {
                       ))}
                     </datalist>
                   </label>
-                  <label>
-                    Staff in charge
-                    <select
-                      value={newEvent.staff}
-                      onChange={(event) =>
-                        setNewEvent((record) => ({ ...record, staff: event.target.value }))
-                      }
-                    >
-                      {assignableStaff.length === 0 && <option>Unassigned</option>}
+                  <div className="team-selector">
+                    <span>Assigned staff</span>
+                    <div className="team-options">
+                      {assignableStaff.length === 0 && (
+                        <p className="empty-state">Add employee accounts before assigning a team.</p>
+                      )}
                       {assignableStaff.map((staff) => (
-                        <option key={staff.name}>{staff.name}</option>
+                        <button
+                          className={newEvent.assignedEmployees.includes(staff.name) ? 'selected' : ''}
+                          key={staff.name}
+                          onClick={() => toggleAssignedEmployee(staff.name)}
+                          type="button"
+                        >
+                          {staff.name}
+                        </button>
                       ))}
-                    </select>
-                  </label>
+                    </div>
+                  </div>
                   <label>
                     Start date
                     <input
@@ -1715,7 +1843,7 @@ function App() {
                   type="button"
                 >
                   <CheckCircle2 size={18} aria-hidden="true" />
-                  Confirm and reserve inventory
+                  Confirm reservation
                 </button>
               </div>
               {inventoryQuantityError && (
@@ -1755,14 +1883,16 @@ function App() {
                   }
                 >
                   <option>All</option>
+                  <option>Draft</option>
                   <option>Reserved</option>
                   <option>Packed</option>
-                  <option>In Use</option>
-                  <option>Completed</option>
+                  <option>Checked Out</option>
+                  <option>Returned</option>
+                  <option>Closed</option>
                 </select>
                 {portalMode === 'employer' && (
                   <select
-                    aria-label="Filter by staff"
+                    aria-label="Filter by assigned staff"
                     value={eventStaffFilter}
                     onChange={(event) => setEventStaffFilter(event.target.value)}
                   >
@@ -1796,7 +1926,7 @@ function App() {
             <section className="surface">
               <div className="section-heading">
                 <div>
-                  <h2>Packing list</h2>
+                  <h2>{portalMode === 'employee' ? 'My task' : 'Packing list'}</h2>
                   <p>{selectedEvent ? selectedEvent.title : 'Select an event'}</p>
                 </div>
                 {selectedEvent && (
@@ -1809,6 +1939,7 @@ function App() {
               {selectedEvent && (
                 <>
                   <EventProgress status={selectedEvent.status} />
+                  <TeamChips employees={selectedEvent.assignedEmployees} />
                   <div className="packing-list">
                     {selectedEvent.reservations.map((reservation) => {
                       const item = inventoryById[reservation.itemId]
@@ -1817,7 +1948,14 @@ function App() {
                       }
                       return (
                         <label className="packing-row" key={reservation.itemId}>
-                          <input type="checkbox" />
+                          <input
+                            checked={selectedEvent.packingProgress[reservation.itemId] ?? false}
+                            disabled={selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed'}
+                            type="checkbox"
+                            onChange={(event) =>
+                              togglePackedItem(selectedEvent.id, reservation.itemId, event.target.checked)
+                            }
+                          />
                           <div>
                             <strong>{item.name}</strong>
                             <span>
@@ -1832,15 +1970,17 @@ function App() {
                   </div>
 
                   <div className="action-row">
-                    <button
-                      className="primary-action"
-                      disabled={selectedEvent.status !== 'Reserved'}
-                      onClick={() => packEvent(selectedEvent.id)}
-                      type="button"
-                    >
-                      <PackageCheck size={18} aria-hidden="true" />
-                      Mark packed
-                    </button>
+                    {portalMode === 'employee' && (
+                      <button
+                        className="primary-action"
+                        disabled={selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed'}
+                        onClick={() => packEvent(selectedEvent.id)}
+                        type="button"
+                      >
+                        <PackageCheck size={18} aria-hidden="true" />
+                        Mark packed and ready
+                      </button>
+                    )}
                     <button
                       className="secondary-action"
                       disabled={selectedEvent.status !== 'Packed'}
@@ -1848,8 +1988,30 @@ function App() {
                       type="button"
                     >
                       <Truck size={18} aria-hidden="true" />
-                      Check out
+                      {portalMode === 'employee' ? 'Check out items' : 'Approve checkout'}
                     </button>
+                  </div>
+                  <div className="action-row">
+                    <button
+                      className="secondary-action"
+                      disabled={selectedEvent.status !== 'Checked Out'}
+                      onClick={() => setActiveTab('returns')}
+                      type="button"
+                    >
+                      <ClipboardList size={18} aria-hidden="true" />
+                      {portalMode === 'employee' ? 'Submit return report' : 'Review returns'}
+                    </button>
+                    {portalMode === 'employer' && (
+                      <button
+                        className="primary-action"
+                        disabled={selectedEvent.status !== 'Returned'}
+                        onClick={closeEvent}
+                        type="button"
+                      >
+                        <CheckCircle2 size={18} aria-hidden="true" />
+                        Close event
+                      </button>
+                    )}
                   </div>
                   {checkoutMessage && <p className="inline-success">{checkoutMessage}</p>}
                   {portalMode === 'employer' && (
@@ -2039,14 +2201,18 @@ function App() {
           <section className="surface">
             <div className="section-heading">
               <div>
-                <h2>Event returns</h2>
-                <p>Record returned, damaged, and missing equipment after an event.</p>
+                <h2>{portalMode === 'employee' ? 'Submit return report' : 'Review returns'}</h2>
+                <p>
+                  {portalMode === 'employee'
+                    ? 'Record returned, damaged, and missing equipment for employer review.'
+                    : 'Review the submitted return report before closing the event.'}
+                </p>
               </div>
               <select
                 value={selectedEvent.id}
                 onChange={(event) => setSelectedEventId(event.target.value)}
               >
-                {events.map((event) => (
+                {visibleEvents.map((event) => (
                   <option key={event.id} value={event.id}>
                     {event.title}
                   </option>
@@ -2071,9 +2237,9 @@ function App() {
                   return null
                 }
                 const line = returnLines[item.id] ?? {
-                  returned: reservation.quantity,
-                  damaged: 0,
-                  missing: 0,
+                  returned: selectedEvent.returnReport?.[item.id]?.returned ?? reservation.quantity,
+                  damaged: selectedEvent.returnReport?.[item.id]?.damaged ?? 0,
+                  missing: selectedEvent.returnReport?.[item.id]?.missing ?? 0,
                 }
 
                 return (
@@ -2120,12 +2286,16 @@ function App() {
 
             <button
               className="primary-action"
-              disabled={selectedEvent.status === 'Completed'}
-              onClick={completeReturn}
+              disabled={
+                portalMode === 'employee'
+                  ? selectedEvent.status !== 'Checked Out'
+                  : selectedEvent.status !== 'Returned'
+              }
+              onClick={portalMode === 'employee' ? submitReturnReport : closeEvent}
               type="button"
             >
               <PackageCheck size={18} aria-hidden="true" />
-              Close event and release reservation
+              {portalMode === 'employee' ? 'Submit return report' : 'Close event'}
             </button>
           </section>
         )}
@@ -2176,8 +2346,8 @@ function App() {
                 />
                 <FlowStep
                   index={2}
-                  title="Assign staff in charge"
-                  text="Select the employee responsible for packing, checkout, and on-site handling."
+                  title="Assign staff"
+                  text="Select one or more employees responsible for packing, checkout, and on-site handling."
                 />
                 <FlowStep
                   index={3}
@@ -2187,7 +2357,7 @@ function App() {
                 <FlowStep
                   index={4}
                   title="Notify employee"
-                  text="The assigned employee receives an unread task notification in their portal."
+                  text="Every assigned staff member receives an unread task notification in their portal."
                 />
               </section>
 
@@ -2259,6 +2429,20 @@ function FlowStep({ index, text, title }: { index: number; text: string; title: 
   )
 }
 
+function TeamChips({ employees }: { employees: string[] }) {
+  if (employees.length === 0) {
+    return <div className="team-chips"><span>Unassigned</span></div>
+  }
+
+  return (
+    <div className="team-chips" aria-label="Assigned staff">
+      {employees.map((employee) => (
+        <span key={employee}>{employee}</span>
+      ))}
+    </div>
+  )
+}
+
 function EventSummary({
   active,
   event,
@@ -2278,8 +2462,9 @@ function EventSummary({
           {event.id} - {event.type} - {formatDate(event.start)} to {formatDate(event.end)}
         </span>
         <span>
-          {event.location} - Staff in charge: {event.staff}
+          {event.location}
         </span>
+        <TeamChips employees={event.assignedEmployees} />
       </div>
       <Badge tone={eventStatusTone(event.status)}>{eventStatusLabel(event.status)}</Badge>
       <p>

@@ -1871,6 +1871,48 @@ button,
   grid-column: 1 / -1;
 }
 
+.team-selector {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.team-selector > span {
+  color: #6b7280;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.team-options,
+.team-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.team-options button,
+.team-chips span {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid rgba(229, 231, 235, 0.86);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #6b7280;
+  font-size: 0.78rem;
+  font-weight: 850;
+  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.06);
+}
+
+.team-options button.selected,
+.team-chips span {
+  border-color: rgba(0, 122, 255, 0.28);
+  background: rgba(0, 122, 255, 0.1);
+  color: #007aff;
+}
+
 @media (max-width: 1120px) {
   .app-shell {
     grid-template-columns: 86px minmax(0, 1fr);
