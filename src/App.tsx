@@ -1871,7 +1871,7 @@ function App() {
           <section className="surface">
             <div className="section-heading inventory-heading">
               <div>
-                <h2>Centralized inventory database</h2>
+                <h2>Centralized inventory tracker</h2>
                 <p>Edit the total, damaged, and missing counts for each item.</p>
               </div>
               <label className="search-box">
