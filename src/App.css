@@ -511,6 +511,49 @@ label {
   padding: 20px;
 }
 
+.liquid-enhanced {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.liquid-enhanced > :not(.liquid-overlay) {
+  position: relative;
+  z-index: 1;
+}
+
+.liquid-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.liquid-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.72), transparent 34%),
+    radial-gradient(circle at 95% 12%, rgba(0, 122, 255, 0.14), transparent 32%),
+    rgba(255, 255, 255, 0.24);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+.liquid-overlay-effect {
+  pointer-events: none;
+}
+
+.liquid-overlay-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .surface:hover,
 .metric-card:hover {
   transform: translateY(-3px);
@@ -2571,6 +2614,14 @@ select {
 .surface:hover,
 .metric-card:hover {
   transform: translateY(-2px);
+}
+
+.liquid-enhanced.surface,
+.liquid-enhanced.metric-card,
+.liquid-enhanced.login-panel,
+.liquid-enhanced.topbar,
+.liquid-enhanced.sidebar {
+  overflow: hidden;
 }
 
 button:active {

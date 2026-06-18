@@ -20,6 +20,7 @@ import {
   UserCog,
   Wrench,
 } from 'lucide-react'
+import LiquidGlass from 'liquid-glass-react'
 import './App.css'
 
 type InventoryStatus =
@@ -185,6 +186,35 @@ function useStoredState<T>(key: string, fallback: T) {
   }, [key, value])
 
   return [value, setValue] as const
+}
+
+function LiquidGlassOverlay({ radius = 28 }: { radius?: number }) {
+  return (
+    <div className="liquid-overlay" aria-hidden="true">
+      <LiquidGlass
+        aberrationIntensity={1.15}
+        blurAmount={0.08}
+        className="liquid-overlay-effect"
+        cornerRadius={radius}
+        displacementScale={22}
+        elasticity={0.18}
+        mode="standard"
+        overLight
+        padding="0"
+        saturation={145}
+        style={{
+          height: '100%',
+          left: '50%',
+          pointerEvents: 'none',
+          position: 'absolute',
+          top: '50%',
+          width: '100%',
+        }}
+      >
+        <span className="liquid-overlay-fill" />
+      </LiquidGlass>
+    </div>
+  )
 }
 
 function numberedIds(prefix: string, count: number) {
@@ -1192,7 +1222,8 @@ function App() {
   if (!authenticatedUser) {
     return (
       <main className="login-shell">
-        <section className="login-panel">
+        <section className="login-panel liquid-enhanced">
+          <LiquidGlassOverlay radius={30} />
           <div className="brand login-brand">
             <img
               alt="Future Ready Academy Inventory"
@@ -1388,7 +1419,8 @@ function App() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar" aria-label="Primary navigation">
+      <aside className="sidebar liquid-enhanced" aria-label="Primary navigation">
+        <LiquidGlassOverlay radius={28} />
         <div className="brand">
           <img
             alt="Future Ready Academy Inventory"
@@ -1447,7 +1479,8 @@ function App() {
       </aside>
 
       <section className="workspace">
-        <header className="topbar">
+        <header className="topbar liquid-enhanced">
+          <LiquidGlassOverlay radius={30} />
           <div>
             <span className="eyebrow premium-pill">Future Ready Inventory</span>
             <h1>Educational and robotics event inventory</h1>
@@ -1494,7 +1527,8 @@ function App() {
             </div>
 
             <div className="two-column">
-              <section className="surface">
+              <section className="surface liquid-enhanced">
+                <LiquidGlassOverlay />
                 <div className="section-heading">
                   <div>
                     <h2>{portalMode === 'employee' ? 'My assigned events' : 'Upcoming events'}</h2>
@@ -1524,7 +1558,8 @@ function App() {
                 </div>
               </section>
 
-              <section className="surface">
+              <section className="surface liquid-enhanced">
+                <LiquidGlassOverlay />
                 {staffNotifications.length > 0 && (
                   <>
                     <div className="section-heading">
@@ -1652,7 +1687,8 @@ function App() {
 
         {activeTab === 'profile' && (
           <section className="panel-stack profile-page">
-            <section className="surface profile-hero">
+            <section className="surface profile-hero liquid-enhanced">
+              <LiquidGlassOverlay />
               <div className="profile-title">
                 <div className="profile-avatar" aria-hidden="true">
                   {profileInitials}
@@ -1671,7 +1707,8 @@ function App() {
             </section>
 
             <div className="profile-grid">
-              <section className="surface profile-panel">
+              <section className="surface profile-panel liquid-enhanced">
+                <LiquidGlassOverlay />
                 <div className="section-heading">
                   <div>
                     <h2>Account</h2>
@@ -1698,7 +1735,8 @@ function App() {
                 </dl>
               </section>
 
-              <section className="surface profile-panel">
+              <section className="surface profile-panel liquid-enhanced">
+                <LiquidGlassOverlay />
                 <div className="section-heading">
                   <div>
                     <h2>{portalMode === 'employer' ? 'Workspace' : 'My work'}</h2>
@@ -1733,7 +1771,8 @@ function App() {
                 </div>
               </section>
 
-              <section className="surface profile-panel">
+              <section className="surface profile-panel liquid-enhanced">
+                <LiquidGlassOverlay />
                 <div className="section-heading">
                   <div>
                     <h2>Quick menu</h2>
@@ -1764,7 +1803,8 @@ function App() {
                 </div>
               </section>
 
-              <section className="surface profile-panel">
+              <section className="surface profile-panel liquid-enhanced">
+                <LiquidGlassOverlay />
                 <div className="section-heading">
                   <div>
                     <h2>Recent activity</h2>
@@ -1796,7 +1836,8 @@ function App() {
 
         {activeTab === 'planner' && (
           <section className="panel-stack">
-            <section className="surface planner-grid">
+            <section className="surface planner-grid liquid-enhanced">
+              <LiquidGlassOverlay />
               <div className="form-panel">
                 <div className="section-heading step-heading">
                   <span>1</span>
@@ -2001,7 +2042,8 @@ function App() {
 
         {activeTab === 'events' && (
           <section className="panel-stack two-column event-workspace">
-            <section className="surface">
+            <section className="surface liquid-enhanced">
+              <LiquidGlassOverlay />
               <div className="section-heading">
                 <div>
                   <h2>{portalMode === 'employee' ? 'My events' : 'Events'}</h2>
@@ -2070,7 +2112,8 @@ function App() {
               </div>
             </section>
 
-            <section className="surface">
+            <section className="surface liquid-enhanced">
+              <LiquidGlassOverlay />
               <div className="section-heading">
                 <div>
                   <h2>{portalMode === 'employee' ? 'My task' : 'Packing list'}</h2>
@@ -2254,7 +2297,8 @@ function App() {
         )}
 
         {activeTab === 'inventory' && (
-          <section className="surface">
+          <section className="surface liquid-enhanced">
+            <LiquidGlassOverlay />
             <div className="section-heading inventory-heading">
               <div>
                 <h2>Centralized inventory tracker</h2>
@@ -2422,7 +2466,8 @@ function App() {
         )}
 
         {activeTab === 'returns' && selectedEvent && (
-          <section className="surface">
+          <section className="surface liquid-enhanced">
+            <LiquidGlassOverlay />
             <div className="section-heading">
               <div>
                 <h2>{portalMode === 'employee' ? 'Submit return report' : 'Review returns'}</h2>
@@ -2525,7 +2570,8 @@ function App() {
         )}
 
         {activeTab === 'audit' && (
-          <section className="surface">
+          <section className="surface liquid-enhanced">
+            <LiquidGlassOverlay />
             <div className="section-heading">
               <div>
                 <h2>History log</h2>
@@ -2552,7 +2598,8 @@ function App() {
         )}
 
         {activeTab === 'flow' && (
-          <section className="surface">
+          <section className="surface liquid-enhanced">
+            <LiquidGlassOverlay />
             <div className="section-heading">
               <div>
                 <h2>User experience flow</h2>
@@ -2628,7 +2675,8 @@ function Metric({
   value: number
 }) {
   return (
-    <section className="metric-card">
+    <section className="metric-card liquid-enhanced">
+      <LiquidGlassOverlay radius={28} />
       <div className="metric-icon">
         <Icon size={20} aria-hidden="true" />
       </div>
