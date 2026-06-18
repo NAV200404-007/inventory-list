@@ -16,17 +16,9 @@ A web-based inventory management app for organizations running educational and r
 - Packing lists, return tracking, audit logs, and simple dashboard metrics.
 - Browser-local persistence using `localStorage` for real-life prototype testing.
 
-## Demo Accounts
+## Accounts
 
-Use these accounts after starting the app:
-
-| Portal | Account | Password |
-| --- | --- | --- |
-| Employer | Grace Wong | `employer123` |
-| Employee | Ben Lim | `employee123` |
-| Employee | Aisha Tan | `inventory123` |
-
-New employer and employee accounts can also be created from the login screen.
+No demo accounts are included. Start by creating an employer account from the login screen, then use that employer account to manage users, inventory, and events.
 
 ## Tech Stack
 
@@ -89,7 +81,7 @@ This is currently a frontend prototype. Data is saved in the browser using `loca
 For production use, the next steps would be:
 
 - Add a backend API and database.
-- Replace demo passwords with secure authentication.
+- Replace browser-only passwords with secure authentication.
 - Add role-based server permissions.
 - Add multi-device real-time inventory updates.
 - Add exportable reports for packing lists, inventory history, and shortages.

@@ -97,18 +97,37 @@ type ReturnLine = {
 
 type TabId = 'dashboard' | 'planner' | 'events' | 'inventory' | 'returns' | 'audit' | 'flow'
 
-const defaultLoginAccounts: LoginAccount[] = [
-  { name: 'Grace Wong', role: 'Employer', portal: 'employer', password: 'employer123' },
-  { name: 'Ben Lim', role: 'Employee', portal: 'employee', password: 'employee123' },
-  { name: 'Aisha Tan', role: 'Inventory Manager', portal: 'employee', password: 'inventory123' },
-]
+const defaultLoginAccounts: LoginAccount[] = []
+const demoAccountNames = new Set(['Grace Wong', 'Ben Lim', 'Aisha Tan'])
+const demoEventIds = new Set(['EVT-2026-001', 'EVT-2026-002', 'EVT-2026-003'])
 
 const storagePrefix = 'event-inventory-system:'
 
 function readStoredValue<T>(key: string, fallback: T) {
   try {
     const storedValue = window.localStorage.getItem(`${storagePrefix}${key}`)
-    return storedValue ? (JSON.parse(storedValue) as T) : fallback
+    if (!storedValue) {
+      return fallback
+    }
+
+    const parsedValue = JSON.parse(storedValue)
+    if (key === 'accounts') {
+      return (parsedValue as LoginAccount[]).filter((account) => !demoAccountNames.has(account.name)) as T
+    }
+    if (key === 'events') {
+      return (parsedValue as EventRecord[]).filter((event) => !demoEventIds.has(event.id)) as T
+    }
+    if (key === 'auditLogs') {
+      return (parsedValue as AuditLog[]).filter((log) => !demoAccountNames.has(log.staff)) as T
+    }
+    if (key === 'notifications') {
+      return (parsedValue as NotificationRecord[]).filter(
+        (notification) =>
+          !demoAccountNames.has(notification.staff) && !demoEventIds.has(notification.eventId),
+      ) as T
+    }
+
+    return parsedValue as T
   } catch {
     return fallback
   }
@@ -195,65 +214,7 @@ const initialInventory: InventoryItem[] = [
   },
 ]
 
-function reservation(itemId: string, quantity: number, assetPrefix: string, offset = 0): Reservation {
-  return {
-    itemId,
-    quantity,
-    selectedAssetIds: numberedIds(assetPrefix, quantity).map((_, index) => {
-      const idNumber = String(index + 1 + offset).padStart(3, '0')
-      return `${assetPrefix}-${idNumber}`
-    }),
-  }
-}
-
-const initialEvents: EventRecord[] = [
-  {
-    id: 'EVT-2026-001',
-    title: 'June VEX IQ Workshop',
-    type: 'VEX IQ workshop',
-    location: 'Training Lab 2',
-    start: '2026-06-08',
-    end: '2026-06-10',
-    staff: 'Ben Lim',
-    status: 'Confirmed',
-    reservations: [
-      reservation('vex-iq-kit', 16, 'VIQ'),
-      reservation('laptop', 18, 'LAP'),
-      reservation('ipad', 8, 'IPAD'),
-    ],
-  },
-  {
-    id: 'EVT-2026-002',
-    title: 'OST Robotics Program',
-    type: 'OST program',
-    location: 'Community Hall A',
-    start: '2026-06-12',
-    end: '2026-06-21',
-    staff: 'Aisha Tan',
-    status: 'In Use',
-    reservations: [
-      reservation('vex-iq-kit', 12, 'VIQ', 16),
-      reservation('ipad', 14, 'IPAD'),
-      reservation('uaro', 10, 'UARO'),
-    ],
-  },
-  {
-    id: 'EVT-2026-003',
-    title: 'Regional Robotics Competition',
-    type: 'Robotics competition',
-    location: 'Arena Bay',
-    start: '2026-06-20',
-    end: '2026-06-23',
-    staff: 'Grace Wong',
-    status: 'Confirmed',
-    reservations: [
-      reservation('vex-iq-kit', 10, 'VIQ', 28),
-      reservation('uaro', 8, 'UARO', 10),
-      reservation('laptop', 12, 'LAP', 18),
-      reservation('ipad', 8, 'IPAD', 14),
-    ],
-  },
-]
+const initialEvents: EventRecord[] = []
 
 const templates: Record<string, Reservation[]> = {
   'VEX IQ workshop': [
@@ -273,48 +234,9 @@ const templates: Record<string, Reservation[]> = {
   ],
 }
 
-const initialAudit: AuditLog[] = [
-  {
-    id: 'log-001',
-    staff: 'Aisha Tan',
-    action: 'Reserved inventory',
-    detail: 'Allocated VEX IQ kits and iPads for OST Robotics Program.',
-    time: '2026-06-01 09:12',
-  },
-  {
-    id: 'log-002',
-    staff: 'Grace Wong',
-    action: 'Confirmed event',
-    detail: 'Confirmed Regional Robotics Competition after availability check.',
-    time: '2026-06-01 14:35',
-  },
-  {
-    id: 'log-003',
-    staff: 'Ben Lim',
-    action: 'Checked out equipment',
-    detail: 'Moved OST Robotics Program equipment to In Use.',
-    time: '2026-06-02 08:45',
-  },
-]
+const initialAudit: AuditLog[] = []
 
-const initialNotifications: NotificationRecord[] = [
-  {
-    id: 'note-001',
-    staff: 'Ben Lim',
-    eventId: 'EVT-2026-001',
-    title: 'Assigned: June VEX IQ Workshop',
-    message: 'Prepare the packing list and check out equipment for Training Lab 2.',
-    read: false,
-  },
-  {
-    id: 'note-002',
-    staff: 'Aisha Tan',
-    eventId: 'EVT-2026-002',
-    title: 'Assigned: OST Robotics Program',
-    message: 'Equipment is already in use at Community Hall A.',
-    read: true,
-  },
-]
+const initialNotifications: NotificationRecord[] = []
 
 const navItems: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -367,7 +289,7 @@ function App() {
   const [authenticatedUser, setAuthenticatedUser] = useState<LoginAccount | null>(null)
   const [authView, setAuthView] = useState<'login' | 'register'>('login')
   const [loginPortal, setLoginPortal] = useState<PortalMode>('employer')
-  const [loginName, setLoginName] = useState('Grace Wong')
+  const [loginName, setLoginName] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [registerPortal, setRegisterPortal] = useState<PortalMode>('employee')
@@ -381,10 +303,10 @@ function App() {
   const [auditLogs, setAuditLogs] = useStoredState('auditLogs', initialAudit)
   const [notifications, setNotifications] = useStoredState('notifications', initialNotifications)
   const [currentStaff, setCurrentStaff] = useState<StaffUser>({
-    name: 'Grace Wong',
+    name: '',
     role: 'Employer',
   })
-  const [selectedEventId, setSelectedEventId] = useState(initialEvents[0].id)
+  const [selectedEventId, setSelectedEventId] = useState('')
   const [inventorySearch, setInventorySearch] = useState('')
   const [newInventoryName, setNewInventoryName] = useState('')
   const [newInventoryPrefix, setNewInventoryPrefix] = useState('')
@@ -398,7 +320,7 @@ function App() {
     location: 'Training Lab 1',
     start: '2026-06-24',
     end: '2026-06-26',
-    staff: 'Ben Lim',
+    staff: 'Unassigned',
     status: 'Draft',
     reservations: templates['VEX IQ workshop'],
   })
@@ -449,9 +371,7 @@ function App() {
   const handlePortalChoice = (portal: PortalMode) => {
     setLoginPortal(portal)
     const firstAccount = accounts.find((account) => account.portal === portal)
-    if (firstAccount) {
-      setLoginName(firstAccount.name)
-    }
+    setLoginName(firstAccount?.name ?? '')
     setLoginError('')
   }
 
@@ -939,6 +859,9 @@ function App() {
                       setLoginError('')
                     }}
                   >
+                    {loginOptions.length === 0 && (
+                      <option value="">No accounts yet</option>
+                    )}
                     {loginOptions.map((account) => (
                       <option key={account.name} value={account.name}>
                         {account.name} - {account.role}
@@ -951,13 +874,7 @@ function App() {
                   Password
                   <input
                     autoComplete="current-password"
-                    placeholder={
-                      loginPortal === 'employer'
-                        ? 'Demo: employer123'
-                        : loginName === 'Aisha Tan'
-                          ? 'Demo: inventory123'
-                          : 'Demo: employee123'
-                    }
+                    placeholder="Enter password"
                     type="password"
                     value={loginPassword}
                     onChange={(event) => {
@@ -969,8 +886,13 @@ function App() {
 
                 {loginError && <p className="login-error">{loginError}</p>}
                 {registerSuccess && <p className="login-success">{registerSuccess}</p>}
+                {loginOptions.length === 0 && (
+                  <p className="login-hint">
+                    No {loginPortal} accounts yet. Create an account first.
+                  </p>
+                )}
 
-                <button className="primary-action" type="submit">
+                <button className="primary-action" disabled={loginOptions.length === 0} type="submit">
                   <LockKeyhole size={18} aria-hidden="true" />
                   Login to {loginPortal === 'employer' ? 'Employer' : 'Employee'} portal
                 </button>
