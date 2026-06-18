@@ -900,6 +900,178 @@ label {
   cursor: not-allowed;
 }
 
+.profile-page {
+  gap: 18px;
+}
+
+.profile-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  background:
+    linear-gradient(135deg, rgba(232, 242, 248, 0.94), rgba(255, 255, 255, 0.88)),
+    #ffffff;
+}
+
+.profile-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.profile-avatar {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #4f7fa3, #7fa8bf);
+  color: #ffffff;
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  box-shadow: 0 16px 30px rgba(79, 127, 163, 0.18);
+}
+
+.profile-hero h2 {
+  margin: 2px 0 3px;
+  color: #1d1d1f;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+}
+
+.profile-hero p {
+  margin: 0;
+  color: #667085;
+  font-weight: 750;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.profile-panel {
+  min-width: 0;
+}
+
+.profile-detail-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.profile-detail-list div,
+.profile-activity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d8e5ed;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.profile-detail-list dt,
+.profile-stats span,
+.profile-activity-row span,
+.profile-activity-row time {
+  color: #667085;
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+.profile-detail-list dd {
+  margin: 0;
+  min-width: 0;
+  color: #1d1d1f;
+  font-weight: 850;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-stats div {
+  display: grid;
+  gap: 8px;
+  min-height: 94px;
+  padding: 14px;
+  border: 1px solid #d8e5ed;
+  border-radius: 8px;
+  background: rgba(244, 249, 252, 0.86);
+}
+
+.profile-stats strong {
+  color: #1d1d1f;
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.profile-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-actions button {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid #d8e5ed;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #315f80;
+  font-weight: 850;
+  text-align: left;
+  box-shadow: 0 10px 24px rgba(73, 101, 119, 0.08);
+}
+
+.profile-actions button:hover {
+  transform: translateY(-1px);
+  border-color: #9fc0d4;
+  background: #ffffff;
+}
+
+.profile-activity {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-activity-row div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.profile-activity-row strong,
+.profile-activity-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-activity-row strong {
+  color: #1d1d1f;
+}
+
+.profile-activity-row time {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
 .simple-flow {
   padding-top: 18px;
   border-top: 1px solid #edf0f3;
@@ -1368,6 +1540,7 @@ button:focus-visible {
   .two-column,
   .planner-grid,
   .add-inventory-grid,
+  .profile-grid,
   .flow-grid,
   .filter-bar {
     grid-template-columns: 1fr;
@@ -1486,7 +1659,9 @@ button:focus-visible {
 
   .topbar,
   .section-heading,
-  .inventory-heading {
+  .inventory-heading,
+  .profile-hero,
+  .profile-title {
     align-items: stretch;
     flex-direction: column;
   }
@@ -1498,8 +1673,30 @@ button:focus-visible {
   .metric-grid,
   .form-grid,
   .filter-bar,
-  .action-row {
+  .action-row,
+  .profile-stats,
+  .profile-actions {
     grid-template-columns: 1fr;
+  }
+
+  .profile-title {
+    gap: 12px;
+  }
+
+  .profile-avatar {
+    width: 58px;
+    height: 58px;
+  }
+
+  .profile-detail-list div,
+  .profile-activity-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .profile-detail-list dd,
+  .profile-activity-row time {
+    text-align: left;
   }
 
   .event-progress {

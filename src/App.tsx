@@ -10,6 +10,7 @@ import {
   Laptop,
   LockKeyhole,
   LogOut,
+  Menu,
   PackageCheck,
   Plus,
   Search,
@@ -95,7 +96,7 @@ type ReturnLine = {
   missing: number
 }
 
-type TabId = 'dashboard' | 'planner' | 'events' | 'inventory' | 'returns' | 'audit' | 'flow'
+type TabId = 'dashboard' | 'planner' | 'events' | 'inventory' | 'returns' | 'audit' | 'flow' | 'profile'
 
 const defaultLoginAccounts: LoginAccount[] = []
 const demoAccountNames = new Set(['Grace Wong', 'Ben Lim', 'Aisha Tan'])
@@ -243,6 +244,7 @@ const navItems: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: 'planner', label: 'Create Event', icon: CalendarDays },
   { id: 'events', label: 'Events', icon: ClipboardList },
   { id: 'inventory', label: 'Inventory', icon: Boxes },
+  { id: 'profile', label: 'Profile', icon: Menu },
 ]
 
 function dateValue(date: string) {
@@ -378,6 +380,7 @@ function App() {
     visibleEvents.find((event) => event.id === selectedEventId) ?? visibleEvents[0]
   const staffNotifications = notifications.filter((notification) => notification.staff === currentStaff.name)
   const unreadNotificationCount = staffNotifications.filter((notification) => !notification.read).length
+  const currentAccount = accounts.find((account) => account.name === currentStaff.name)
 
   const handleLogin = () => {
     const account = accounts.find(
@@ -530,6 +533,22 @@ function App() {
     ),
     upcoming: visibleEvents.filter((event) => dateValue(event.start) >= dateValue('2026-06-02')).length,
   }
+  const profileEvents = portalMode === 'employee' ? assignedEvents : events
+  const profileActiveEvents = profileEvents.filter((event) => event.status !== 'Completed')
+  const profilePackedEvents = profileEvents.filter(
+    (event) => event.status === 'Packed' || event.status === 'In Use',
+  )
+  const profileLogs =
+    portalMode === 'employee'
+      ? auditLogs.filter((log) => log.staff === currentStaff.name).slice(0, 4)
+      : auditLogs.slice(0, 4)
+  const profileInitials =
+    currentStaff.name
+      .split(' ')
+      .map((part) => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'U'
 
   const filteredInventory = inventory.filter((item) => {
     const matchesSearch = `${item.name} ${item.category} ${item.location}`
@@ -1308,6 +1327,150 @@ function App() {
                     <li>Employee checks out and returns items after the event.</li>
                   </ol>
                 </div>}
+              </section>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'profile' && (
+          <section className="panel-stack profile-page">
+            <section className="surface profile-hero">
+              <div className="profile-title">
+                <div className="profile-avatar" aria-hidden="true">
+                  {profileInitials}
+                </div>
+                <div>
+                  <span className="eyebrow">
+                    {portalMode === 'employer' ? 'Employer profile' : 'Employee profile'}
+                  </span>
+                  <h2>{currentStaff.name}</h2>
+                  <p>{currentStaff.role}</p>
+                </div>
+              </div>
+              <Badge tone={portalMode === 'employer' ? 'info' : 'success'}>
+                {portalMode === 'employer' ? 'Employer' : 'Employee'}
+              </Badge>
+            </section>
+
+            <div className="profile-grid">
+              <section className="surface profile-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Account</h2>
+                    <p>Your login and access level.</p>
+                  </div>
+                </div>
+                <dl className="profile-detail-list">
+                  <div>
+                    <dt>Name</dt>
+                    <dd>{currentStaff.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Role</dt>
+                    <dd>{currentStaff.role}</dd>
+                  </div>
+                  <div>
+                    <dt>Portal</dt>
+                    <dd>{currentAccount?.portal === 'employer' ? 'Employer login' : 'Employee login'}</dd>
+                  </div>
+                  <div>
+                    <dt>Notifications</dt>
+                    <dd>{unreadNotificationCount} unread</dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section className="surface profile-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>{portalMode === 'employer' ? 'Workspace' : 'My work'}</h2>
+                    <p>
+                      {portalMode === 'employer'
+                        ? 'Current system overview.'
+                        : 'Tasks assigned to this account.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="profile-stats">
+                  <div>
+                    <span>{portalMode === 'employer' ? 'Users' : 'Assigned events'}</span>
+                    <strong>{portalMode === 'employer' ? accounts.length : assignedEvents.length}</strong>
+                  </div>
+                  <div>
+                    <span>{portalMode === 'employer' ? 'Events' : 'Active tasks'}</span>
+                    <strong>
+                      {portalMode === 'employer' ? profileEvents.length : profileActiveEvents.length}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{portalMode === 'employer' ? 'Active events' : 'Packed or in use'}</span>
+                    <strong>
+                      {portalMode === 'employer' ? profileActiveEvents.length : profilePackedEvents.length}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Unread notices</span>
+                    <strong>{unreadNotificationCount}</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section className="surface profile-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Quick menu</h2>
+                    <p>Common actions for this login.</p>
+                  </div>
+                </div>
+                <div className="profile-actions">
+                  {portalMode === 'employer' && (
+                    <button type="button" onClick={() => setActiveTab('planner')}>
+                      <Plus size={18} aria-hidden="true" />
+                      Create event
+                    </button>
+                  )}
+                  {portalMode === 'employer' && (
+                    <button type="button" onClick={() => setActiveTab('inventory')}>
+                      <Boxes size={18} aria-hidden="true" />
+                      Manage inventory
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setActiveTab('events')}>
+                    <ClipboardList size={18} aria-hidden="true" />
+                    {portalMode === 'employee' ? 'My events' : 'All events'}
+                  </button>
+                  <button type="button" onClick={handleLogout}>
+                    <LogOut size={18} aria-hidden="true" />
+                    Logout
+                  </button>
+                </div>
+              </section>
+
+              <section className="surface profile-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Recent activity</h2>
+                    <p>
+                      {portalMode === 'employee'
+                        ? 'Actions recorded under your name.'
+                        : 'Latest inventory and event updates.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="profile-activity">
+                  {profileLogs.length === 0 && (
+                    <div className="empty-state">No activity recorded yet.</div>
+                  )}
+                  {profileLogs.map((log) => (
+                    <div className="profile-activity-row" key={log.id}>
+                      <div>
+                        <strong>{log.action}</strong>
+                        <span>{log.detail}</span>
+                      </div>
+                      <time>{log.time}</time>
+                    </div>
+                  ))}
+                </div>
               </section>
             </div>
           </section>
