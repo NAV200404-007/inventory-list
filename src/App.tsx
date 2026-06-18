@@ -425,6 +425,7 @@ function App() {
   const [returnLines, setReturnLines] = useState<Record<string, ReturnLine>>({})
   const [checkoutMessage, setCheckoutMessage] = useState('')
   const [userManagementMessage, setUserManagementMessage] = useState('')
+  const [editingPackingEventId, setEditingPackingEventId] = useState('')
 
   const inventoryById = useMemo(
     () => Object.fromEntries(inventory.map((item) => [item.id, item])),
@@ -444,6 +445,14 @@ function App() {
   const visibleEvents = portalMode === 'employee' ? assignedEvents : events
   const selectedEvent =
     visibleEvents.find((event) => event.id === selectedEventId) ?? visibleEvents[0]
+  const selectedEventAllPacked =
+    selectedEvent
+      ? selectedEvent.reservations.length > 0 &&
+        selectedEvent.reservations.every(
+          (reservation) => selectedEvent.packingProgress[reservation.itemId],
+        )
+      : false
+  const selectedEventEditMode = selectedEvent?.id === editingPackingEventId
   const staffNotifications = notifications.filter((notification) => notification.staff === currentStaff.name)
   const unreadNotificationCount = staffNotifications.filter((notification) => !notification.read).length
   const currentAccount = accounts.find((account) => account.name === currentStaff.name)
@@ -709,6 +718,90 @@ function App() {
             }
           : record,
       ),
+    )
+  }
+
+  const rebuildEventReservationAssets = (event: EventRecord, reservations: Reservation[]) =>
+    reservations.map((reservation) => {
+      const item = inventoryById[reservation.itemId]
+      if (!item) {
+        return reservation
+      }
+      return {
+        ...reservation,
+        selectedAssetIds: pickAssetIds(
+          item,
+          reservation.quantity,
+          events.filter((record) => record.id !== event.id),
+          event.start,
+          event.end,
+        ),
+      }
+    })
+
+  const updateEventReservationQuantity = (eventId: string, itemId: string, value: string) => {
+    const quantity = parseWholeNumber(value)
+    if (quantity === null) {
+      setInventoryQuantityError('Packing list quantities must be whole numbers only.')
+      return
+    }
+    setInventoryQuantityError('')
+    setEvents((records) =>
+      records.map((record) => {
+        if (record.id !== eventId) {
+          return record
+        }
+        const reservations = record.reservations.map((reservation) =>
+          reservation.itemId === itemId ? { ...reservation, quantity } : reservation,
+        )
+        return {
+          ...record,
+          reservations: rebuildEventReservationAssets(record, reservations),
+          packingProgress: {
+            ...record.packingProgress,
+            [itemId]: false,
+          },
+        }
+      }),
+    )
+  }
+
+  const addEventReservationItem = (eventId: string, itemId: string) => {
+    if (!itemId) {
+      return
+    }
+    setEvents((records) =>
+      records.map((record) => {
+        if (record.id !== eventId || record.reservations.some((reservation) => reservation.itemId === itemId)) {
+          return record
+        }
+        const reservations = [...record.reservations, { itemId, quantity: 1, selectedAssetIds: [] }]
+        return {
+          ...record,
+          reservations: rebuildEventReservationAssets(record, reservations),
+          packingProgress: {
+            ...record.packingProgress,
+            [itemId]: false,
+          },
+        }
+      }),
+    )
+  }
+
+  const removeEventReservationItem = (eventId: string, itemId: string) => {
+    setEvents((records) =>
+      records.map((record) => {
+        if (record.id !== eventId) {
+          return record
+        }
+        const nextProgress = { ...record.packingProgress }
+        delete nextProgress[itemId]
+        return {
+          ...record,
+          reservations: record.reservations.filter((reservation) => reservation.itemId !== itemId),
+          packingProgress: nextProgress,
+        }
+      }),
     )
   }
 
@@ -1302,7 +1395,10 @@ function App() {
           </div>
         </div>
 
-        <nav className="nav-list">
+        <nav
+          className="nav-list"
+          style={{ gridTemplateColumns: `repeat(${allowedNavItems.length}, minmax(0, 1fr))` }}
+        >
           {allowedNavItems.map((item) => {
             const Icon = item.icon
             return (
@@ -1949,6 +2045,7 @@ function App() {
                     onSelect={() => {
                       setCheckoutMessage('')
                       setSelectedEventId(event.id)
+                      setEditingPackingEventId('')
                     }}
                   />
                 ))}
@@ -1962,9 +2059,25 @@ function App() {
                   <p>{selectedEvent ? selectedEvent.title : 'Select an event'}</p>
                 </div>
                 {selectedEvent && (
-                  <Badge tone={eventStatusTone(selectedEvent.status)}>
-                    {eventStatusLabel(selectedEvent.status)}
-                  </Badge>
+                  <div className="packing-heading-actions">
+                    <Badge tone={eventStatusTone(selectedEvent.status)}>
+                      {eventStatusLabel(selectedEvent.status)}
+                    </Badge>
+                    {portalMode === 'employer' && (
+                      <button
+                        className="icon-action"
+                        disabled={selectedEvent.status === 'Closed'}
+                        onClick={() =>
+                          setEditingPackingEventId((currentId) =>
+                            currentId === selectedEvent.id ? '' : selectedEvent.id,
+                          )
+                        }
+                        type="button"
+                      >
+                        {selectedEventEditMode ? 'Done editing' : 'Edit'}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1972,7 +2085,35 @@ function App() {
                 <>
                   <EventProgress status={selectedEvent.status} />
                   <TeamChips employees={selectedEvent.assignedEmployees} />
-                  <div className="packing-list">
+                  {portalMode === 'employer' && selectedEventEditMode && (
+                    <label className="packing-add-item">
+                      Add item
+                      <select
+                        value=""
+                        onChange={(event) => addEventReservationItem(selectedEvent.id, event.target.value)}
+                      >
+                        <option value="" disabled>
+                          Select inventory item
+                        </option>
+                        {inventory
+                          .filter(
+                            (item) =>
+                              !selectedEvent.reservations.some(
+                                (reservation) => reservation.itemId === item.id,
+                              ),
+                          )
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  )}
+                  {inventoryQuantityError && selectedEventEditMode && (
+                    <p className="form-error quantity-warning">{inventoryQuantityError}</p>
+                  )}
+                  <div className="packing-list" key={selectedEvent.id}>
                     {selectedEvent.reservations.map((reservation) => {
                       const item = inventoryById[reservation.itemId]
                       if (!item) {
@@ -1996,6 +2137,36 @@ function App() {
                             </span>
                             <AssetIdPreview assetIds={reservation.selectedAssetIds} />
                           </div>
+                          {portalMode === 'employer' && selectedEventEditMode && (
+                            <div className="packing-edit-controls">
+                              <input
+                                aria-label={`${item.name} quantity`}
+                                inputMode="numeric"
+                                min={0}
+                                pattern="[0-9]*"
+                                step={1}
+                                type="number"
+                                value={reservation.quantity}
+                                onChange={(event) =>
+                                  updateEventReservationQuantity(
+                                    selectedEvent.id,
+                                    reservation.itemId,
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                              <button
+                                className="icon-action danger"
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  removeEventReservationItem(selectedEvent.id, reservation.itemId)
+                                }}
+                                type="button"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
                         </label>
                       )
                     })}
@@ -2005,7 +2176,10 @@ function App() {
                     {portalMode === 'employee' && (
                       <button
                         className="primary-action"
-                        disabled={selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed'}
+                        disabled={
+                          (selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed') ||
+                          !selectedEventAllPacked
+                        }
                         onClick={() => packEvent(selectedEvent.id)}
                         type="button"
                       >
