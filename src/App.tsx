@@ -864,7 +864,7 @@ function App() {
         <section className="login-panel">
           <div className="brand login-brand">
             <div className="brand-mark">
-              <Boxes size={22} aria-hidden="true" />
+              <img alt="" src="/app-icon.png" />
             </div>
             <div>
               <p>Event Inventory</p>
@@ -1059,7 +1059,7 @@ function App() {
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
           <div className="brand-mark">
-            <Boxes size={22} aria-hidden="true" />
+            <img alt="" src="/app-icon.png" />
           </div>
           <div>
             <p>Event Inventory</p>
