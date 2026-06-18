@@ -270,8 +270,6 @@ const eventFlowSteps = [
   { key: 'Reserved', label: 'Reserved' },
   { key: 'Packed', label: 'Packed' },
   { key: 'In Use', label: 'Checked out' },
-  { key: 'Completed', label: 'Returned' },
-  { key: 'Completed', label: 'Completed' },
 ] as const
 
 function eventStatusLabel(status: EventStatus) {
@@ -290,8 +288,7 @@ function eventStepIndex(status: EventStatus) {
   if (status === 'Draft') return 0
   if (status === 'Reserved') return 1
   if (status === 'Packed') return 2
-  if (status === 'In Use') return 3
-  return 5
+  return 3
 }
 
 function usedAssetIdsForItem(events: EventRecord[], itemId: string, start: string, end: string) {
