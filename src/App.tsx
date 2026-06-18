@@ -52,6 +52,7 @@ type Reservation = {
 }
 
 type EventRecord = {
+  recordId: string
   id: string
   title: string
   type: string
@@ -123,7 +124,11 @@ function normalizeEventStatus(status: string): EventStatus {
   return 'Draft'
 }
 
-function normalizeEventRecord(event: EventRecord & { staff?: string }) {
+function createEventRecordId() {
+  return `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function normalizeEventRecord(event: EventRecord & { staff?: string; recordId?: string }) {
   const assignedEmployees =
     event.assignedEmployees?.length
       ? event.assignedEmployees
@@ -133,6 +138,7 @@ function normalizeEventRecord(event: EventRecord & { staff?: string }) {
 
   return {
     ...event,
+    recordId: event.recordId ?? createEventRecordId(),
     assignedEmployees,
     packingProgress: event.packingProgress ?? {},
     status: normalizeEventStatus(event.status),
@@ -411,6 +417,7 @@ function App() {
   const [inventoryFormError, setInventoryFormError] = useState('')
   const [inventoryQuantityError, setInventoryQuantityError] = useState('')
   const [newEvent, setNewEvent] = useState<EventRecord>({
+    recordId: '',
     id: 'EVT-2026-004',
     title: 'STEM Holiday Robotics Camp',
     type: 'VEX IQ workshop',
@@ -444,7 +451,9 @@ function App() {
   const assignedEvents = events.filter((event) => event.assignedEmployees.includes(currentStaff.name))
   const visibleEvents = portalMode === 'employee' ? assignedEvents : events
   const selectedEvent =
-    visibleEvents.find((event) => event.id === selectedEventId) ?? visibleEvents[0]
+    visibleEvents.find(
+      (event) => event.recordId === selectedEventId || event.id === selectedEventId,
+    ) ?? visibleEvents[0]
   const selectedEventAllPacked =
     selectedEvent
       ? selectedEvent.reservations.length > 0 &&
@@ -452,7 +461,7 @@ function App() {
           (reservation) => selectedEvent.packingProgress[reservation.itemId],
         )
       : false
-  const selectedEventEditMode = selectedEvent?.id === editingPackingEventId
+  const selectedEventEditMode = selectedEvent?.recordId === editingPackingEventId
   const staffNotifications = notifications.filter((notification) => notification.staff === currentStaff.name)
   const unreadNotificationCount = staffNotifications.filter((notification) => !notification.read).length
   const currentAccount = accounts.find((account) => account.name === currentStaff.name)
@@ -572,7 +581,7 @@ function App() {
     events
       .filter(
         (event) =>
-          event.id !== excludeEventId &&
+          event.recordId !== excludeEventId &&
           event.status !== 'Closed' &&
           overlaps(start, end, event.start, event.end),
       )
@@ -708,7 +717,7 @@ function App() {
   const togglePackedItem = (eventId: string, itemId: string, packed: boolean) => {
     setEvents((records) =>
       records.map((record) =>
-        record.id === eventId
+        record.recordId === eventId
           ? {
               ...record,
               packingProgress: {
@@ -732,7 +741,7 @@ function App() {
         selectedAssetIds: pickAssetIds(
           item,
           reservation.quantity,
-          events.filter((record) => record.id !== event.id),
+          events.filter((record) => record.recordId !== event.recordId),
           event.start,
           event.end,
         ),
@@ -748,7 +757,7 @@ function App() {
     setInventoryQuantityError('')
     setEvents((records) =>
       records.map((record) => {
-        if (record.id !== eventId) {
+        if (record.recordId !== eventId) {
           return record
         }
         const reservations = record.reservations.map((reservation) =>
@@ -772,7 +781,10 @@ function App() {
     }
     setEvents((records) =>
       records.map((record) => {
-        if (record.id !== eventId || record.reservations.some((reservation) => reservation.itemId === itemId)) {
+        if (
+          record.recordId !== eventId ||
+          record.reservations.some((reservation) => reservation.itemId === itemId)
+        ) {
           return record
         }
         const reservations = [...record.reservations, { itemId, quantity: 1, selectedAssetIds: [] }]
@@ -791,7 +803,7 @@ function App() {
   const removeEventReservationItem = (eventId: string, itemId: string) => {
     setEvents((records) =>
       records.map((record) => {
-        if (record.id !== eventId) {
+        if (record.recordId !== eventId) {
           return record
         }
         const nextProgress = { ...record.packingProgress }
@@ -894,7 +906,7 @@ function App() {
   }
 
   const deleteEvent = (eventId: string) => {
-    const eventToDelete = events.find((event) => event.id === eventId)
+    const eventToDelete = events.find((event) => event.recordId === eventId)
     if (!eventToDelete) {
       return
     }
@@ -906,14 +918,19 @@ function App() {
       return
     }
 
-    setEvents((records) => records.filter((event) => event.id !== eventId))
-    setNotifications((records) => records.filter((notification) => notification.eventId !== eventId))
+    setEvents((records) => records.filter((event) => event.recordId !== eventId))
+    setNotifications((records) =>
+      records.filter(
+        (notification) =>
+          notification.eventId !== eventToDelete.recordId && notification.eventId !== eventToDelete.id,
+      ),
+    )
     setSelectedEventId((currentEventId) => {
       if (currentEventId !== eventId) {
         return currentEventId
       }
-      const remainingEvent = events.find((event) => event.id !== eventId)
-      return remainingEvent?.id ?? ''
+      const remainingEvent = events.find((event) => event.recordId !== eventId)
+      return remainingEvent?.recordId ?? ''
     })
     addLog('Deleted event', `${eventToDelete.id} - ${eventToDelete.title} was deleted.`)
   }
@@ -990,6 +1007,7 @@ function App() {
 
     const eventToAdd: EventRecord = {
       ...newEvent,
+      recordId: createEventRecordId(),
       id: newEvent.id.trim() || `EVT-${Date.now()}`,
       status: 'Reserved',
       reservations: reservationsWithAssets,
@@ -998,7 +1016,7 @@ function App() {
     const assignedNotifications = eventToAdd.assignedEmployees.map((employeeName, index) => ({
       id: `note-${Date.now()}-${index}`,
       staff: employeeName,
-      eventId: eventToAdd.id,
+      eventId: eventToAdd.recordId,
       title: `Assigned: ${eventToAdd.title}`,
       message: `${currentStaff.name} assigned you to ${eventToAdd.location}. Open the packing list and item IDs.`,
       read: false,
@@ -1006,7 +1024,7 @@ function App() {
 
     setEvents((records) => [eventToAdd, ...records])
     setNotifications((records) => [...assignedNotifications, ...records])
-    setSelectedEventId(eventToAdd.id)
+    setSelectedEventId(eventToAdd.recordId)
     setActiveTab('events')
     addLog(
       'Confirmed reservation and assigned staff',
@@ -1015,7 +1033,7 @@ function App() {
   }
 
   const packEvent = (eventId: string) => {
-    const event = events.find((record) => record.id === eventId)
+    const event = events.find((record) => record.recordId === eventId)
     if (!event) {
       return
     }
@@ -1025,7 +1043,7 @@ function App() {
       .map((account, index) => ({
         id: `note-${Date.now()}-${index}`,
         staff: account.name,
-        eventId: event.id,
+        eventId: event.recordId,
         title: `Packed and ready: ${event.title}`,
         message: `${currentStaff.name} marked the shared packing list as packed and ready for ${event.location}.`,
         read: false,
@@ -1033,7 +1051,7 @@ function App() {
 
     setEvents((records) =>
       records.map((record) =>
-        record.id === eventId
+        record.recordId === eventId
           ? {
               ...record,
               status: 'Packed',
@@ -1050,14 +1068,14 @@ function App() {
   }
 
   const checkoutEvent = (eventId: string) => {
-    const event = events.find((record) => record.id === eventId)
+    const event = events.find((record) => record.recordId === eventId)
     if (!event) {
       return
     }
 
     setEvents((records) =>
       records.map((record) =>
-        record.id === eventId ? { ...record, status: 'Checked Out' } : record,
+        record.recordId === eventId ? { ...record, status: 'Checked Out' } : record,
       ),
     )
     setCheckoutMessage('Items checked out for deployment.')
@@ -1085,7 +1103,7 @@ function App() {
       .map((account, index) => ({
         id: `note-${Date.now()}-return-${index}`,
         staff: account.name,
-        eventId: selectedEvent.id,
+        eventId: selectedEvent.recordId,
         title: `Return report ready: ${selectedEvent.title}`,
         message: `${currentStaff.name} submitted the return report for review.`,
         read: false,
@@ -1093,7 +1111,7 @@ function App() {
 
     setEvents((records) =>
       records.map((record) =>
-        record.id === selectedEvent.id
+        record.recordId === selectedEvent.recordId
           ? { ...record, returnReport: report, status: 'Returned' }
           : record,
       ),
@@ -1141,7 +1159,7 @@ function App() {
     )
     setEvents((records) =>
       records.map((record) =>
-        record.id === selectedEvent.id ? { ...record, status: 'Closed' } : record,
+        record.recordId === selectedEvent.recordId ? { ...record, status: 'Closed' } : record,
       ),
     )
     addLog(
@@ -1495,10 +1513,10 @@ function App() {
                     <EventSummary
                       event={event}
                       inventoryById={inventoryById}
-                      key={event.id}
+                      key={event.recordId}
                       onSelect={() => {
                         setCheckoutMessage('')
-                        setSelectedEventId(event.id)
+                        setSelectedEventId(event.recordId)
                         setActiveTab('events')
                       }}
                     />
@@ -2038,13 +2056,13 @@ function App() {
                 )}
                 {filteredVisibleEvents.map((event) => (
                   <EventSummary
-                    active={selectedEvent?.id === event.id}
+                    active={selectedEvent?.recordId === event.recordId}
                     event={event}
                     inventoryById={inventoryById}
-                    key={event.id}
+                    key={event.recordId}
                     onSelect={() => {
                       setCheckoutMessage('')
-                      setSelectedEventId(event.id)
+                      setSelectedEventId(event.recordId)
                       setEditingPackingEventId('')
                     }}
                   />
@@ -2069,7 +2087,7 @@ function App() {
                         disabled={selectedEvent.status === 'Closed'}
                         onClick={() =>
                           setEditingPackingEventId((currentId) =>
-                            currentId === selectedEvent.id ? '' : selectedEvent.id,
+                            currentId === selectedEvent.recordId ? '' : selectedEvent.recordId,
                           )
                         }
                         type="button"
@@ -2090,7 +2108,7 @@ function App() {
                       Add item
                       <select
                         value=""
-                        onChange={(event) => addEventReservationItem(selectedEvent.id, event.target.value)}
+                        onChange={(event) => addEventReservationItem(selectedEvent.recordId, event.target.value)}
                       >
                         <option value="" disabled>
                           Select inventory item
@@ -2113,7 +2131,7 @@ function App() {
                   {inventoryQuantityError && selectedEventEditMode && (
                     <p className="form-error quantity-warning">{inventoryQuantityError}</p>
                   )}
-                  <div className="packing-list" key={selectedEvent.id}>
+                  <div className="packing-list" key={selectedEvent.recordId}>
                     {selectedEvent.reservations.map((reservation) => {
                       const item = inventoryById[reservation.itemId]
                       if (!item) {
@@ -2126,7 +2144,7 @@ function App() {
                             disabled={selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed'}
                             type="checkbox"
                             onChange={(event) =>
-                              togglePackedItem(selectedEvent.id, reservation.itemId, event.target.checked)
+                              togglePackedItem(selectedEvent.recordId, reservation.itemId, event.target.checked)
                             }
                           />
                           <div>
@@ -2149,7 +2167,7 @@ function App() {
                                 value={reservation.quantity}
                                 onChange={(event) =>
                                   updateEventReservationQuantity(
-                                    selectedEvent.id,
+                                    selectedEvent.recordId,
                                     reservation.itemId,
                                     event.target.value,
                                   )
@@ -2159,7 +2177,7 @@ function App() {
                                 className="icon-action danger"
                                 onClick={(event) => {
                                   event.preventDefault()
-                                  removeEventReservationItem(selectedEvent.id, reservation.itemId)
+                                  removeEventReservationItem(selectedEvent.recordId, reservation.itemId)
                                 }}
                                 type="button"
                               >
@@ -2180,7 +2198,7 @@ function App() {
                           (selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed') ||
                           !selectedEventAllPacked
                         }
-                        onClick={() => packEvent(selectedEvent.id)}
+                        onClick={() => packEvent(selectedEvent.recordId)}
                         type="button"
                       >
                         <PackageCheck size={18} aria-hidden="true" />
@@ -2190,7 +2208,7 @@ function App() {
                     <button
                       className="secondary-action"
                       disabled={selectedEvent.status !== 'Packed'}
-                      onClick={() => checkoutEvent(selectedEvent.id)}
+                      onClick={() => checkoutEvent(selectedEvent.recordId)}
                       type="button"
                     >
                       <Truck size={18} aria-hidden="true" />
@@ -2223,7 +2241,7 @@ function App() {
                   {portalMode === 'employer' && (
                     <button
                       className="delete-action"
-                      onClick={() => deleteEvent(selectedEvent.id)}
+                      onClick={() => deleteEvent(selectedEvent.recordId)}
                       type="button"
                     >
                       Delete event
@@ -2415,11 +2433,11 @@ function App() {
                 </p>
               </div>
               <select
-                value={selectedEvent.id}
+                value={selectedEvent.recordId}
                 onChange={(event) => setSelectedEventId(event.target.value)}
               >
                 {visibleEvents.map((event) => (
-                  <option key={event.id} value={event.id}>
+                  <option key={event.recordId} value={event.recordId}>
                     {event.title}
                   </option>
                 ))}
