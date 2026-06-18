@@ -863,13 +863,11 @@ function App() {
       <main className="login-shell">
         <section className="login-panel">
           <div className="brand login-brand">
-            <div className="brand-mark">
-              <img alt="" src="/app-icon.png" />
-            </div>
-            <div>
-              <p>Event Inventory</p>
-              <span>Secure portal login</span>
-            </div>
+            <img
+              alt="Future Ready Academy Inventory"
+              className="brand-logo"
+              src="/app-logo.png"
+            />
           </div>
 
           <div>
@@ -1058,13 +1056,11 @@ function App() {
     <main className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
-          <div className="brand-mark">
-            <img alt="" src="/app-icon.png" />
-          </div>
-          <div>
-            <p>Event Inventory</p>
-            <span>Education robotics ops</span>
-          </div>
+          <img
+            alt="Future Ready Academy Inventory"
+            className="brand-logo"
+            src="/app-logo.png"
+          />
         </div>
 
         <div className="role-card" aria-label="Current portal">
