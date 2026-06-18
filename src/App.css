@@ -478,16 +478,26 @@ label {
   align-items: center;
 }
 
-.step-heading > span {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background: #007aff;
-  color: #ffffff;
+.step-heading > span:not(.badge) {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: #fff0f4;
+  color: #e40046;
+  font-size: 0.78rem;
   font-weight: 900;
   flex: 0 0 auto;
+}
+
+.step-heading > span:not(.badge)::before {
+  content: "Step ";
+}
+
+.add-inventory-panel .step-heading > span:not(.badge)::before {
+  content: "";
 }
 
 .step-divider {
@@ -500,9 +510,10 @@ label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 26px;
-  padding: 0 9px;
-  border-radius: 999px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   font-size: 0.78rem;
   font-weight: 850;
   white-space: nowrap;
@@ -510,27 +521,32 @@ label {
 
 .badge.success {
   color: #248a3d;
-  background: #eaf8ee;
+  border-color: #c8efd3;
+  background: #f5fff8;
 }
 
 .badge.danger {
   color: #d70015;
-  background: #fff0ef;
+  border-color: #ffc9c4;
+  background: #fff5f4;
 }
 
 .badge.warning {
   color: #b25b00;
-  background: #fff6e5;
+  border-color: #ffe0ad;
+  background: #fff8eb;
 }
 
 .badge.info {
   color: #007aff;
-  background: #eef5ff;
+  border-color: #cfe5ff;
+  background: #f4f9ff;
 }
 
 .badge.neutral {
   color: #475467;
-  background: #eef2f6;
+  border-color: #dfe4ea;
+  background: #f7f9fb;
 }
 
 .event-list {
@@ -747,11 +763,12 @@ label {
 }
 
 .progress-step span {
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
+  min-width: 30px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
   background: #eef2f6;
   color: #667085;
   font-weight: 900;
@@ -947,9 +964,7 @@ button:focus-visible {
 .inventory-table,
 .return-table {
   display: grid;
-  border: 1px solid #e5e5ea;
-  border-radius: 8px;
-  overflow: hidden;
+  gap: 10px;
 }
 
 .allocation-row,
@@ -960,18 +975,21 @@ button:focus-visible {
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border-bottom: 1px solid #f2f2f7;
+  border: 1px solid #e5e5ea;
+  border-radius: 8px;
+  background: #ffffff;
 }
 
 .allocation-row:last-child,
 .inventory-row:last-child,
 .return-row:last-child {
-  border-bottom: 0;
+  border-bottom: 1px solid #e5e5ea;
 }
 
 .allocation-row {
   grid-template-columns: minmax(0, 1fr) 118px 104px 112px 90px;
   align-items: center;
+  box-shadow: 0 8px 20px rgba(60, 60, 67, 0.04);
 }
 
 .allocation-row strong,
@@ -1035,7 +1053,7 @@ button:focus-visible {
 .delete-action {
   color: #ff3b30;
   border-color: #ffd7d4;
-  background: #fff7f7;
+  background: #fff8f8;
 }
 
 .icon-action:hover,
