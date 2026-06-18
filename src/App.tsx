@@ -1131,7 +1131,7 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">Centralized inventory control</span>
+            <span className="eyebrow premium-pill">Future Ready Inventory</span>
             <h1>Educational and robotics event inventory</h1>
           </div>
           <div className="top-actions">
