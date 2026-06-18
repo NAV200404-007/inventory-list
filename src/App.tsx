@@ -240,7 +240,7 @@ const initialAudit: AuditLog[] = []
 const initialNotifications: NotificationRecord[] = []
 
 const navItems: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+  { id: 'dashboard', label: 'Home', icon: BarChart3 },
   { id: 'planner', label: 'Create Event', icon: CalendarDays },
   { id: 'events', label: 'Events', icon: ClipboardList },
   { id: 'inventory', label: 'Inventory', icon: Boxes },
@@ -249,6 +249,17 @@ const navItems: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
 
 function dateValue(date: string) {
   return new Date(`${date}T00:00:00`).getTime()
+}
+
+function parseWholeNumber(value: string) {
+  const trimmedValue = value.trim()
+  if (trimmedValue === '') {
+    return 0
+  }
+  if (!/^\d+$/.test(trimmedValue)) {
+    return null
+  }
+  return Number.parseInt(trimmedValue, 10)
 }
 
 function overlaps(startA: string, endA: string, startB: string, endB: string) {
@@ -345,6 +356,7 @@ function App() {
   const [newInventoryTotal, setNewInventoryTotal] = useState(1)
   const [newInventoryUnit, setNewInventoryUnit] = useState('unit')
   const [inventoryFormError, setInventoryFormError] = useState('')
+  const [inventoryQuantityError, setInventoryQuantityError] = useState('')
   const [newEvent, setNewEvent] = useState<EventRecord>({
     id: 'EVT-2026-004',
     title: 'STEM Holiday Robotics Camp',
@@ -564,12 +576,18 @@ function App() {
     return matchesSearch && matchesFilter
   })
 
-  const updateReservation = (itemId: string, quantity: number) => {
+  const updateReservation = (itemId: string, value: string) => {
+    const quantity = parseWholeNumber(value)
+    if (quantity === null) {
+      setInventoryQuantityError('Quantities must be whole numbers only. Decimals are not saved.')
+      return
+    }
+    setInventoryQuantityError('')
     setNewEvent((event) => ({
       ...event,
       reservations: event.reservations.map((reservation) =>
         reservation.itemId === itemId
-          ? { ...reservation, quantity: Math.max(0, quantity) }
+          ? { ...reservation, quantity }
           : reservation,
       ),
     }))
@@ -598,27 +616,44 @@ function App() {
     field: keyof Omit<InventoryItem, 'id'>,
     value: string | number,
   ) => {
+    const isQuantityField = field === 'total' || field === 'damaged' || field === 'missing'
+    const nextQuantity = isQuantityField ? parseWholeNumber(String(value)) : null
+
+    if (isQuantityField && nextQuantity === null) {
+      setInventoryQuantityError('Inventory quantities must be whole numbers only. Decimals are not saved.')
+      return
+    }
+
+    setInventoryQuantityError('')
     setInventory((items) =>
       items.map((item) => {
         if (item.id !== itemId) {
           return item
         }
 
+        const quantityValue = nextQuantity ?? 0
+
         return {
           ...item,
-          [field]:
-            field === 'total' ||
-            field === 'damaged' ||
-            field === 'missing'
-              ? Math.max(0, Number(value))
-              : value,
+          [field]: isQuantityField ? quantityValue : value,
           assetIds:
             field === 'total'
-              ? numberedIds(item.assetIds[0]?.split('-')[0] ?? item.id.toUpperCase(), Math.max(0, Number(value)))
+              ? numberedIds(item.assetIds[0]?.split('-')[0] ?? item.id.toUpperCase(), quantityValue)
               : item.assetIds,
         }
       }),
     )
+  }
+
+  const updateNewInventoryTotal = (value: string) => {
+    const nextQuantity = parseWholeNumber(value)
+    if (nextQuantity === null) {
+      setInventoryQuantityError('New inventory quantity must be a whole number. Decimals are not saved.')
+      return
+    }
+    setInventoryQuantityError('')
+    setInventoryFormError('')
+    setNewInventoryTotal(nextQuantity)
   }
 
   const addInventoryItem = () => {
@@ -636,16 +671,23 @@ function App() {
       return
     }
 
+    if (!Number.isInteger(newInventoryTotal)) {
+      setInventoryFormError('Total quantity must be a whole number.')
+      return
+    }
+
+    const totalQuantity = Math.max(0, newInventoryTotal)
+
     const itemToAdd: InventoryItem = {
       id,
       name,
       category: 'Custom',
-      total: Math.max(0, newInventoryTotal),
+      total: totalQuantity,
       damaged: 0,
       missing: 0,
       location: '',
       unit: newInventoryUnit.trim() || 'unit',
-      assetIds: numberedIds(prefix, Math.max(0, newInventoryTotal)),
+      assetIds: numberedIds(prefix, totalQuantity),
     }
 
     setInventory((items) => [...items, itemToAdd])
@@ -816,12 +858,18 @@ function App() {
     addLog('Checked out equipment', `${event.title} equipment moved to In Use.`)
   }
 
-  const setReturnValue = (itemId: string, key: keyof ReturnLine, value: number) => {
+  const setReturnValue = (itemId: string, key: keyof ReturnLine, value: string) => {
+    const nextQuantity = parseWholeNumber(value)
+    if (nextQuantity === null) {
+      setInventoryQuantityError('Return quantities must be whole numbers only. Decimals are not saved.')
+      return
+    }
+    setInventoryQuantityError('')
     setReturnLines((lines) => ({
       ...lines,
       [itemId]: {
         ...(lines[itemId] ?? { returned: 0, damaged: 0, missing: 0 }),
-        [key]: Math.max(0, value),
+        [key]: nextQuantity,
       },
     }))
   }
@@ -1631,11 +1679,14 @@ function App() {
                       </div>
                       <input
                         aria-label={`${line.item.name} quantity`}
+                        inputMode="numeric"
                         min={0}
+                        pattern="[0-9]*"
+                        step={1}
                         type="number"
                         value={line.quantity}
                         onChange={(event) =>
-                          updateReservation(line.item.id, Number(event.target.value))
+                          updateReservation(line.item.id, event.target.value)
                         }
                       />
                       <div className="availability">
@@ -1667,6 +1718,9 @@ function App() {
                   Confirm and reserve inventory
                 </button>
               </div>
+              {inventoryQuantityError && (
+                <p className="form-error quantity-warning">{inventoryQuantityError}</p>
+              )}
             </section>
           </section>
         )}
@@ -1851,6 +1905,10 @@ function App() {
                 </div>
               </div>
 
+              {inventoryQuantityError && (
+                <p className="form-error quantity-warning">{inventoryQuantityError}</p>
+              )}
+
               <div className="add-inventory-grid">
                 <label>
                   Item name
@@ -1877,12 +1935,13 @@ function App() {
                 <label>
                   Total
                   <input
+                    inputMode="numeric"
                     min={0}
+                    pattern="[0-9]*"
+                    step={1}
                     type="number"
                     value={newInventoryTotal}
-                    onChange={(event) =>
-                      setNewInventoryTotal(Math.max(0, Number(event.target.value)))
-                    }
+                    onChange={(event) => updateNewInventoryTotal(event.target.value)}
                   />
                 </label>
                 <label>
@@ -1923,7 +1982,10 @@ function App() {
                     <label>
                       Total
                       <input
+                        inputMode="numeric"
                         min={0}
+                        pattern="[0-9]*"
+                        step={1}
                         type="number"
                         value={item.total}
                         onChange={(event) =>
@@ -1938,7 +2000,10 @@ function App() {
                     <label>
                       Damaged
                       <input
+                        inputMode="numeric"
                         min={0}
+                        pattern="[0-9]*"
+                        step={1}
                         type="number"
                         value={item.damaged}
                         onChange={(event) =>
@@ -1949,7 +2014,10 @@ function App() {
                     <label>
                       Missing
                       <input
+                        inputMode="numeric"
                         min={0}
+                        pattern="[0-9]*"
+                        step={1}
                         type="number"
                         value={item.missing}
                         onChange={(event) =>
@@ -1987,6 +2055,9 @@ function App() {
             </div>
 
             <div className="return-table">
+              {inventoryQuantityError && (
+                <p className="form-error quantity-warning">{inventoryQuantityError}</p>
+              )}
               <div className="table-header">
                 <span>Item</span>
                 <span>Checked out</span>
@@ -2010,27 +2081,36 @@ function App() {
                     <strong>{item.name}</strong>
                     <span>{reservation.quantity}</span>
                     <input
+                      inputMode="numeric"
                       min={0}
+                      pattern="[0-9]*"
+                      step={1}
                       type="number"
                       value={line.returned}
                       onChange={(event) =>
-                        setReturnValue(item.id, 'returned', Number(event.target.value))
+                        setReturnValue(item.id, 'returned', event.target.value)
                       }
                     />
                     <input
+                      inputMode="numeric"
                       min={0}
+                      pattern="[0-9]*"
+                      step={1}
                       type="number"
                       value={line.damaged}
                       onChange={(event) =>
-                        setReturnValue(item.id, 'damaged', Number(event.target.value))
+                        setReturnValue(item.id, 'damaged', event.target.value)
                       }
                     />
                     <input
+                      inputMode="numeric"
                       min={0}
+                      pattern="[0-9]*"
+                      step={1}
                       type="number"
                       value={line.missing}
                       onChange={(event) =>
-                        setReturnValue(item.id, 'missing', Number(event.target.value))
+                        setReturnValue(item.id, 'missing', event.target.value)
                       }
                     />
                   </div>

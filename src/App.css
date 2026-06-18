@@ -1,3 +1,11 @@
+.app-shell,
+.login-shell,
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
@@ -638,7 +646,8 @@ label {
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 850;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
 }
 
 .badge.success {
@@ -1003,9 +1012,9 @@ label {
 
 .user-row strong,
 .user-row span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .user-row strong {
@@ -1204,9 +1213,9 @@ label {
 
 .profile-activity-row strong,
 .profile-activity-row span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .profile-activity-row strong {
@@ -1397,7 +1406,7 @@ button:focus-visible {
   color: #344054;
   font-size: 0.82rem;
   font-weight: 850;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .icon-action.danger,
@@ -1669,6 +1678,197 @@ button:focus-visible {
   margin: 2px 0 0;
   color: #667085;
   line-height: 1.45;
+}
+
+.app-shell,
+.login-shell {
+  background:
+    radial-gradient(circle at 8% 8%, rgba(122, 197, 255, 0.7), transparent 26%),
+    radial-gradient(circle at 86% 12%, rgba(198, 166, 255, 0.62), transparent 28%),
+    radial-gradient(circle at 72% 88%, rgba(116, 231, 201, 0.56), transparent 30%),
+    radial-gradient(circle at 18% 86%, rgba(255, 212, 142, 0.42), transparent 24%),
+    linear-gradient(135deg, #f8fbff 0%, #e9f5ff 42%, #f7f5ff 100%);
+}
+
+.surface,
+.metric-card,
+.login-panel,
+.topbar,
+.sidebar,
+.role-card,
+.staff-switcher,
+.event-card,
+.allocation-row,
+.inventory-row,
+.return-row,
+.packing-row,
+.audit-row,
+.flow-lane,
+.flow-step,
+.notification-row,
+.profile-detail-list div,
+.profile-activity-row,
+.profile-stats div,
+.quick-actions button,
+.profile-actions button {
+  border-color: rgba(255, 255, 255, 0.72);
+}
+
+.surface,
+.metric-card,
+.login-panel {
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.topbar {
+  background:
+    radial-gradient(circle at 92% 0%, rgba(116, 231, 201, 0.22), transparent 36%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.68), rgba(222, 240, 255, 0.42));
+}
+
+.premium-pill,
+.notification-pill {
+  color: #24526f;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.top-actions button,
+.primary-action,
+.nav-list button.active {
+  background: linear-gradient(135deg, #287bb8, #5a9fd4 48%, #6fc9b7);
+  color: #ffffff;
+}
+
+.secondary-action {
+  background: linear-gradient(135deg, #21a67a, #6fc9b7);
+}
+
+.metric-card:nth-child(1) {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(204, 234, 255, 0.5));
+}
+
+.metric-card:nth-child(2) {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(225, 215, 255, 0.48));
+}
+
+.metric-card:nth-child(3) {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(204, 245, 231, 0.48));
+}
+
+.metric-icon,
+.quick-actions button svg,
+.flow-step > span,
+.profile-avatar {
+  background: linear-gradient(135deg, #287bb8, #6fc9b7);
+}
+
+.badge.info,
+.badge.success,
+.badge.warning,
+.badge.danger,
+.badge.neutral {
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.badge.info {
+  color: #24526f;
+  border-color: rgba(90, 159, 212, 0.44);
+}
+
+.badge.success {
+  color: #166a50;
+  border-color: rgba(111, 201, 183, 0.48);
+}
+
+.badge.warning {
+  color: #965300;
+  border-color: rgba(255, 198, 95, 0.54);
+}
+
+.badge.danger {
+  color: #b42318;
+  border-color: rgba(255, 133, 124, 0.5);
+}
+
+.surface,
+.metric-card,
+.topbar,
+.event-card,
+.quick-actions button,
+.profile-actions button,
+.allocation-row,
+.inventory-row,
+.return-row {
+  overflow: visible;
+}
+
+.topbar,
+.section-heading,
+.event-card,
+.allocation-row,
+.inventory-row,
+.return-row,
+.profile-hero,
+.profile-title,
+.profile-detail-list div,
+.profile-activity-row,
+.user-row,
+.packing-row,
+.notification-row {
+  min-width: 0;
+}
+
+.topbar h1,
+.section-heading h2,
+.metric-card strong,
+.metric-card span,
+.metric-card p,
+.event-card strong,
+.event-card span,
+.event-card p,
+.item-cell strong,
+.item-cell span,
+.asset-id-summary,
+.profile-activity-row strong,
+.profile-activity-row span,
+.profile-detail-list dd,
+.profile-detail-list dt,
+.user-row strong,
+.user-row span,
+.notification-row strong,
+.notification-row span,
+.flow-step strong,
+.flow-step p,
+button,
+label,
+input,
+select {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.profile-activity-row strong,
+.profile-activity-row span,
+.user-row strong,
+.user-row span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+button,
+.icon-action,
+.delete-action,
+.nav-list button,
+.top-actions button,
+.primary-action,
+.secondary-action {
+  white-space: normal;
+}
+
+.quantity-warning {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 1120px) {
