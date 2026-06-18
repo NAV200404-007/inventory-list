@@ -28,7 +28,7 @@ type InventoryStatus =
   | 'Damaged'
   | 'Missing'
 
-type EventStatus = 'Draft' | 'Confirmed' | 'In Use' | 'Completed'
+type EventStatus = 'Draft' | 'Reserved' | 'Packed' | 'In Use' | 'Completed'
 type Role = 'Employer' | 'Inventory Manager' | 'Employee'
 type PortalMode = 'employer' | 'employee'
 
@@ -265,6 +265,35 @@ function getUsable(item: InventoryItem) {
   return Math.max(0, item.total - item.damaged - item.missing)
 }
 
+const eventFlowSteps = [
+  { key: 'Draft', label: 'Draft' },
+  { key: 'Reserved', label: 'Reserved' },
+  { key: 'Packed', label: 'Packed' },
+  { key: 'In Use', label: 'Checked out' },
+  { key: 'Completed', label: 'Returned' },
+  { key: 'Completed', label: 'Completed' },
+] as const
+
+function eventStatusLabel(status: EventStatus) {
+  if (status === 'In Use') return 'Checked out'
+  return status
+}
+
+function eventStatusTone(status: EventStatus) {
+  if (status === 'Completed') return 'neutral'
+  if (status === 'Packed') return 'success'
+  if (status === 'In Use') return 'warning'
+  return 'info'
+}
+
+function eventStepIndex(status: EventStatus) {
+  if (status === 'Draft') return 0
+  if (status === 'Reserved') return 1
+  if (status === 'Packed') return 2
+  if (status === 'In Use') return 3
+  return 5
+}
+
 function usedAssetIdsForItem(events: EventRecord[], itemId: string, start: string, end: string) {
   return events
     .filter((event) => event.status !== 'Completed' && overlaps(start, end, event.start, event.end))
@@ -307,7 +336,11 @@ function App() {
     role: 'Employer',
   })
   const [selectedEventId, setSelectedEventId] = useState('')
+  const [eventSearch, setEventSearch] = useState('')
+  const [eventStatusFilter, setEventStatusFilter] = useState<'All' | EventStatus>('All')
+  const [eventStaffFilter, setEventStaffFilter] = useState('All')
   const [inventorySearch, setInventorySearch] = useState('')
+  const [inventoryFilter, setInventoryFilter] = useState<'All' | 'Low stock' | 'Issues'>('All')
   const [newInventoryName, setNewInventoryName] = useState('')
   const [newInventoryPrefix, setNewInventoryPrefix] = useState('')
   const [newInventoryTotal, setNewInventoryTotal] = useState(1)
@@ -340,11 +373,12 @@ function App() {
   const loginOptions = accounts.filter((account) => account.portal === loginPortal)
   const allowedNavItems =
     portalMode === 'employee'
-      ? navItems.filter((item) => item.id !== 'planner')
+      ? navItems.filter((item) => item.id !== 'planner' && item.id !== 'inventory')
       : navItems
-  const selectedEvent = events.find((event) => event.id === selectedEventId) ?? events[0]
   const assignedEvents = events.filter((event) => event.staff === currentStaff.name)
   const visibleEvents = portalMode === 'employee' ? assignedEvents : events
+  const selectedEvent =
+    visibleEvents.find((event) => event.id === selectedEventId) ?? visibleEvents[0]
   const staffNotifications = notifications.filter((notification) => notification.staff === currentStaff.name)
   const unreadNotificationCount = staffNotifications.filter((notification) => !notification.read).length
 
@@ -479,6 +513,14 @@ function App() {
   const hasShortage = plannerLines.some((line) => line.shortage > 0)
   const activeEvents = events.filter((event) => event.status !== 'Completed')
   const visibleActiveEvents = visibleEvents.filter((event) => event.status !== 'Completed')
+  const filteredVisibleEvents = visibleEvents.filter((event) => {
+    const matchesSearch = `${event.id} ${event.title} ${event.type} ${event.location} ${event.staff}`
+      .toLowerCase()
+      .includes(eventSearch.toLowerCase())
+    const matchesStatus = eventStatusFilter === 'All' || event.status === eventStatusFilter
+    const matchesStaff = eventStaffFilter === 'All' || event.staff === eventStaffFilter
+    return matchesSearch && matchesStatus && matchesStaff
+  })
 
   const dashboardStats = {
     usable: inventory.reduce((total, item) => total + getUsable(item), 0),
@@ -492,11 +534,19 @@ function App() {
     upcoming: visibleEvents.filter((event) => dateValue(event.start) >= dateValue('2026-06-02')).length,
   }
 
-  const filteredInventory = inventory.filter((item) =>
-    `${item.name} ${item.category} ${item.location}`
+  const filteredInventory = inventory.filter((item) => {
+    const matchesSearch = `${item.name} ${item.category} ${item.location}`
       .toLowerCase()
-      .includes(inventorySearch.toLowerCase()),
-  )
+      .includes(inventorySearch.toLowerCase())
+    const reserved = reservedQuantity(item.id, '2026-06-02', '2026-12-31')
+    const usable = getUsable(item)
+    const matchesFilter =
+      inventoryFilter === 'All' ||
+      (inventoryFilter === 'Low stock' && usable - reserved <= 5) ||
+      (inventoryFilter === 'Issues' && item.damaged + item.missing > 0)
+
+    return matchesSearch && matchesFilter
+  })
 
   const updateReservation = (itemId: string, quantity: number) => {
     setNewEvent((event) => ({
@@ -597,6 +647,13 @@ function App() {
       return
     }
 
+    const shouldDelete = window.confirm(
+      `Delete ${eventToDelete.title}? This will remove the event, packing list, and related notifications.`,
+    )
+    if (!shouldDelete) {
+      return
+    }
+
     setEvents((records) => records.filter((event) => event.id !== eventId))
     setNotifications((records) => records.filter((notification) => notification.eventId !== eventId))
     setSelectedEventId((currentEventId) => {
@@ -622,6 +679,13 @@ function App() {
 
     if (accountToDelete.portal === 'employer' && employerCount <= 1) {
       setUserManagementMessage('Keep at least one employer account so the app stays manageable.')
+      return
+    }
+
+    const shouldDelete = window.confirm(
+      `Delete ${accountToDelete.name}? Assigned events will be moved to another employee or Unassigned.`,
+    )
+    if (!shouldDelete) {
       return
     }
 
@@ -670,7 +734,7 @@ function App() {
     const eventToAdd: EventRecord = {
       ...newEvent,
       id: newEvent.id.trim() || `EVT-${Date.now()}`,
-      status: 'Confirmed',
+      status: 'Reserved',
       reservations: reservationsWithAssets,
     }
 
@@ -694,7 +758,7 @@ function App() {
     )
   }
 
-  const checkoutEvent = (eventId: string) => {
+  const packEvent = (eventId: string) => {
     const event = events.find((record) => record.id === eventId)
     if (!event) {
       return
@@ -707,17 +771,32 @@ function App() {
         staff: account.name,
         eventId: event.id,
         title: `Ready for deployment: ${event.title}`,
-        message: `${currentStaff.name} marked all equipment as packed and checked out for ${event.location}.`,
+        message: `${currentStaff.name} marked all equipment as packed and ready for ${event.location}.`,
         read: false,
       }))
+
+    setEvents((records) =>
+      records.map((record) =>
+        record.id === eventId ? { ...record, status: 'Packed' } : record,
+      ),
+    )
+    setNotifications((records) => [...employerNotifications, ...records])
+    setCheckoutMessage('Message sent. Employer has been notified that equipment is packed and ready for deployment.')
+    addLog('Packed equipment', `${event.title} equipment marked as packed and ready.`)
+  }
+
+  const checkoutEvent = (eventId: string) => {
+    const event = events.find((record) => record.id === eventId)
+    if (!event) {
+      return
+    }
 
     setEvents((records) =>
       records.map((record) =>
         record.id === eventId ? { ...record, status: 'In Use' } : record,
       ),
     )
-    setNotifications((records) => [...employerNotifications, ...records])
-    setCheckoutMessage('Message sent. Employer has been notified that equipment is packed and ready for deployment.')
+    setCheckoutMessage('Equipment checked out. Event is now in use.')
     addLog('Checked out equipment', `${event.title} equipment moved to In Use.`)
   }
 
@@ -771,7 +850,7 @@ function App() {
 
     const hasReserved = events.some(
       (event) =>
-        event.status === 'Confirmed' &&
+        (event.status === 'Reserved' || event.status === 'Packed') &&
         event.reservations.some((reservation) => reservation.itemId === item.id),
     )
 
@@ -1093,6 +1172,13 @@ function App() {
                   </div>
                 </div>
                 <div className="event-list compact">
+                  {visibleActiveEvents.length === 0 && (
+                    <div className="empty-state">
+                      {portalMode === 'employee'
+                        ? 'No assigned active events yet.'
+                        : 'No active events yet. Create an event to get started.'}
+                    </div>
+                  )}
                   {visibleActiveEvents.map((event) => (
                     <EventSummary
                       event={event}
@@ -1146,8 +1232,12 @@ function App() {
                 )}
                 <div className="section-heading">
                   <div>
-                    <h2>Quick actions</h2>
-                    <p>Most common things to do from here.</p>
+                    <h2>{portalMode === 'employee' ? 'My next steps' : 'Quick actions'}</h2>
+                    <p>
+                      {portalMode === 'employee'
+                        ? 'Open your event, pack the listed items, then check them out.'
+                        : 'Most common things to do from here.'}
+                    </p>
                   </div>
                 </div>
                 <div className="quick-actions">
@@ -1157,13 +1247,15 @@ function App() {
                       Create event
                     </button>
                   )}
-                  <button type="button" onClick={() => setActiveTab('inventory')}>
-                    <Boxes size={18} aria-hidden="true" />
-                    Edit inventory
-                  </button>
+                  {portalMode === 'employer' && (
+                    <button type="button" onClick={() => setActiveTab('inventory')}>
+                      <Boxes size={18} aria-hidden="true" />
+                      Edit inventory
+                    </button>
+                  )}
                   <button type="button" onClick={() => setActiveTab('events')}>
                     <ClipboardList size={18} aria-hidden="true" />
-                    View packing lists
+                    {portalMode === 'employee' ? 'Open my packing list' : 'View packing lists'}
                   </button>
                 </div>
 
@@ -1214,7 +1306,7 @@ function App() {
                   </div>
                 )}
 
-                <div className="simple-flow">
+                {portalMode === 'employer' && <div className="simple-flow">
                   <h2>Simple flow</h2>
                   <ol>
                     <li>Employer creates event and selects staff in charge.</li>
@@ -1222,7 +1314,7 @@ function App() {
                     <li>Assigned employee sees the task and packing list.</li>
                     <li>Employee checks out and returns items after the event.</li>
                   </ol>
-                </div>
+                </div>}
               </section>
             </div>
           </section>
@@ -1428,12 +1520,55 @@ function App() {
             <section className="surface">
               <div className="section-heading">
                 <div>
-                  <h2>Upcoming events</h2>
-                  <p>Every confirmed allocation and current checkout.</p>
+                  <h2>{portalMode === 'employee' ? 'My events' : 'Events'}</h2>
+                  <p>
+                    {portalMode === 'employee'
+                      ? 'Only events assigned to you are shown here.'
+                      : 'Search and filter allocations, packing, and checkout status.'}
+                  </p>
                 </div>
               </div>
+              <div className="filter-bar">
+                <label className="search-box">
+                  <Search size={17} aria-hidden="true" />
+                  <input
+                    placeholder="Search events"
+                    value={eventSearch}
+                    onChange={(event) => setEventSearch(event.target.value)}
+                  />
+                </label>
+                <select
+                  aria-label="Filter by status"
+                  value={eventStatusFilter}
+                  onChange={(event) =>
+                    setEventStatusFilter(event.target.value as 'All' | EventStatus)
+                  }
+                >
+                  <option>All</option>
+                  <option>Reserved</option>
+                  <option>Packed</option>
+                  <option>In Use</option>
+                  <option>Completed</option>
+                </select>
+                {portalMode === 'employer' && (
+                  <select
+                    aria-label="Filter by staff"
+                    value={eventStaffFilter}
+                    onChange={(event) => setEventStaffFilter(event.target.value)}
+                  >
+                    <option>All</option>
+                    {staffUsers.map((staff) => (
+                      <option key={staff.name}>{staff.name}</option>
+                    ))}
+                    <option>Unassigned</option>
+                  </select>
+                )}
+              </div>
               <div className="event-list">
-                {visibleEvents.map((event) => (
+                {filteredVisibleEvents.length === 0 && (
+                  <div className="empty-state">No events match these filters.</div>
+                )}
+                {filteredVisibleEvents.map((event) => (
                   <EventSummary
                     active={selectedEvent?.id === event.id}
                     event={event}
@@ -1454,11 +1589,16 @@ function App() {
                   <h2>Packing list</h2>
                   <p>{selectedEvent ? selectedEvent.title : 'Select an event'}</p>
                 </div>
-                {selectedEvent && <Badge tone="info">{selectedEvent.status}</Badge>}
+                {selectedEvent && (
+                  <Badge tone={eventStatusTone(selectedEvent.status)}>
+                    {eventStatusLabel(selectedEvent.status)}
+                  </Badge>
+                )}
               </div>
 
               {selectedEvent && (
                 <>
+                  <EventProgress status={selectedEvent.status} />
                   <div className="packing-list">
                     {selectedEvent.reservations.map((reservation) => {
                       const item = inventoryById[reservation.itemId]
@@ -1481,15 +1621,26 @@ function App() {
                     })}
                   </div>
 
-                  <button
-                    className="primary-action"
-                    disabled={selectedEvent.status === 'Completed'}
-                    onClick={() => checkoutEvent(selectedEvent.id)}
-                    type="button"
-                  >
-                    <Truck size={18} aria-hidden="true" />
-                    Mark equipment checked out
-                  </button>
+                  <div className="action-row">
+                    <button
+                      className="primary-action"
+                      disabled={selectedEvent.status !== 'Reserved'}
+                      onClick={() => packEvent(selectedEvent.id)}
+                      type="button"
+                    >
+                      <PackageCheck size={18} aria-hidden="true" />
+                      Mark packed
+                    </button>
+                    <button
+                      className="secondary-action"
+                      disabled={selectedEvent.status !== 'Packed'}
+                      onClick={() => checkoutEvent(selectedEvent.id)}
+                      type="button"
+                    >
+                      <Truck size={18} aria-hidden="true" />
+                      Check out
+                    </button>
+                  </div>
                   {checkoutMessage && <p className="inline-success">{checkoutMessage}</p>}
                   {portalMode === 'employer' && (
                     <button
@@ -1521,6 +1672,18 @@ function App() {
                   onChange={(event) => setInventorySearch(event.target.value)}
                 />
               </label>
+            </div>
+            <div className="segmented-filter" aria-label="Inventory filters">
+              {(['All', 'Low stock', 'Issues'] as const).map((filter) => (
+                <button
+                  className={inventoryFilter === filter ? 'active' : ''}
+                  key={filter}
+                  onClick={() => setInventoryFilter(filter)}
+                  type="button"
+                >
+                  {filter}
+                </button>
+              ))}
             </div>
 
             <section className="add-inventory-panel">
@@ -1882,7 +2045,7 @@ function EventSummary({
           {event.location} - Staff in charge: {event.staff}
         </span>
       </div>
-      <Badge tone={event.status === 'Completed' ? 'neutral' : 'info'}>{event.status}</Badge>
+      <Badge tone={eventStatusTone(event.status)}>{eventStatusLabel(event.status)}</Badge>
       <p>
         {event.reservations
           .map((reservation) => {
@@ -1893,6 +2056,26 @@ function EventSummary({
           .join(', ')}
       </p>
     </button>
+  )
+}
+
+function EventProgress({ status }: { status: EventStatus }) {
+  const currentStep = eventStepIndex(status)
+
+  return (
+    <div className="event-progress" aria-label={`Event status: ${eventStatusLabel(status)}`}>
+      {eventFlowSteps.map((step, index) => (
+        <div
+          className={`progress-step ${index <= currentStep ? 'complete' : ''} ${
+            index === currentStep ? 'current' : ''
+          }`}
+          key={`${step.label}-${index}`}
+        >
+          <span>{index + 1}</span>
+          <strong>{step.label}</strong>
+        </div>
+      ))}
+    </div>
   )
 }
 

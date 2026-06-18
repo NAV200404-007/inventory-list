@@ -679,6 +679,122 @@ label {
   box-shadow: 0 8px 20px rgba(0, 122, 255, 0.08);
 }
 
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 150px 180px;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.filter-bar select,
+.segmented-filter button {
+  min-height: 42px;
+}
+
+.segmented-filter {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: 6px;
+  width: min(420px, 100%);
+  margin: -4px 0 16px;
+  padding: 5px;
+  border-radius: 8px;
+  background: #eef2f6;
+}
+
+.segmented-filter button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #475467;
+  font-weight: 850;
+}
+
+.segmented-filter button.active {
+  background: #ffffff;
+  color: #007aff;
+  box-shadow: 0 4px 12px rgba(60, 60, 67, 0.1);
+}
+
+.empty-state {
+  padding: 16px;
+  border: 1px dashed #d6dde6;
+  border-radius: 8px;
+  color: #667085;
+  background: #fbfcfd;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.event-progress {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.progress-step {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  border: 1px solid #e5e5ea;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #8e8e93;
+  text-align: center;
+}
+
+.progress-step span {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #eef2f6;
+  color: #667085;
+  font-weight: 900;
+  font-size: 0.8rem;
+}
+
+.progress-step strong {
+  overflow-wrap: anywhere;
+  color: inherit;
+  font-size: 0.78rem;
+  line-height: 1.15;
+}
+
+.progress-step.complete {
+  border-color: #c8efd3;
+  background: #f5fff8;
+  color: #248a3d;
+}
+
+.progress-step.complete span {
+  background: #34c759;
+  color: #ffffff;
+}
+
+.progress-step.current {
+  border-color: #007aff;
+  box-shadow: 0 8px 20px rgba(0, 122, 255, 0.08);
+}
+
+.action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.action-row .primary-action,
+.action-row .secondary-action {
+  width: 100%;
+  margin-top: 0;
+  align-self: stretch;
+}
+
 .user-management {
   display: grid;
   gap: 10px;
@@ -1214,8 +1330,13 @@ button:focus-visible {
   .two-column,
   .planner-grid,
   .add-inventory-grid,
-  .flow-grid {
+  .flow-grid,
+  .filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  .event-progress {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .allocation-row {
@@ -1306,7 +1427,17 @@ button:focus-visible {
   }
 
   .metric-grid,
-  .form-grid {
+  .form-grid,
+  .filter-bar,
+  .action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .event-progress {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .segmented-filter {
     grid-template-columns: 1fr;
   }
 
