@@ -3445,3 +3445,55 @@ button:not(:disabled):active,
 .dark-mode .profile-detail-list dt {
   color: #aab6c7;
 }
+
+.dark-mode .auth-mode-switcher button,
+.dark-mode .login-role-switcher,
+.dark-mode .login-role-switcher button,
+.dark-mode .segmented-filter,
+.dark-mode .segmented-filter button,
+.dark-mode .team-options button,
+.dark-mode .team-chips span,
+.dark-mode .premium-pill,
+.dark-mode .notification-pill,
+.dark-mode .login-hint,
+.dark-mode .inline-success,
+.dark-mode .form-error {
+  border-color: rgba(148, 163, 184, 0.28);
+  background-color: rgba(15, 23, 42, 0.56);
+  color: #dce8f7;
+}
+
+.dark-mode .auth-mode-switcher button.active,
+.dark-mode .login-role-switcher button.active,
+.dark-mode .segmented-filter button.active,
+.dark-mode .team-options button.selected,
+.dark-mode .team-chips span {
+  border-color: rgba(0, 122, 255, 0.34);
+  background: rgba(0, 122, 255, 0.2);
+  color: #eaf4ff;
+}
+
+.dark-mode .login-hint strong,
+.dark-mode .empty-state,
+.dark-mode .badge,
+.dark-mode .status-cell,
+.dark-mode .availability span {
+  color: #dce8f7;
+}
+
+.dark-mode .login-error,
+.dark-mode .form-error {
+  background: rgba(255, 59, 48, 0.16);
+  color: #ffb4ae;
+}
+
+.dark-mode .login-success,
+.dark-mode .inline-success {
+  background: rgba(52, 199, 89, 0.16);
+  color: #8ff0a8;
+}
+
+.dark-mode option {
+  background: #101827;
+  color: #f8fafc;
+}

@@ -511,9 +511,16 @@ function App() {
   const staffNotifications = notifications.filter((notification) => notification.staff === currentStaff.name)
   const unreadNotificationCount = staffNotifications.filter((notification) => !notification.read).length
   const currentAccount = accounts.find((account) => account.name === currentStaff.name)
+  const effectiveLoginName =
+    loginOptions.find((account) => account.name.toLowerCase() === loginName.trim().toLowerCase())
+      ?.name ??
+    loginOptions[0]?.name ??
+    ''
 
   const handleLogin = () => {
-    const passwordError = passwordValidationMessage(loginPassword)
+    const selectedLoginName = effectiveLoginName
+    const selectedPassword = loginPassword.trim()
+    const passwordError = passwordValidationMessage(selectedPassword)
     if (passwordError) {
       setLoginError(passwordError)
       return
@@ -522,8 +529,8 @@ function App() {
     const account = accounts.find(
       (candidate) =>
         candidate.portal === loginPortal &&
-        candidate.name === loginName &&
-        candidate.password === loginPassword,
+        candidate.name.toLowerCase() === selectedLoginName.toLowerCase() &&
+        candidate.password === selectedPassword,
     )
 
     if (!account) {
@@ -1305,7 +1312,7 @@ function App() {
                 <label>
                   Account
                   <select
-                    value={loginName}
+                    value={effectiveLoginName}
                     onChange={(event) => {
                       setLoginName(event.target.value)
                       setLoginError('')
