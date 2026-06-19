@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   BarChart3,
   Bell,
@@ -484,6 +484,9 @@ function App() {
     allowedNavItems.findIndex((item) => item.id === activeTab),
     0,
   )
+  const selectNavTab = useCallback((tabId: TabId) => {
+    setActiveTab((currentTab) => (currentTab === tabId ? currentTab : tabId))
+  }, [])
   const staffNotifications = notifications.filter((notification) => notification.staff === currentStaff.name)
   const unreadNotificationCount = staffNotifications.filter((notification) => !notification.read).length
   const currentAccount = accounts.find((account) => account.name === currentStaff.name)
@@ -1536,7 +1539,13 @@ function App() {
               <button
                 className={activeTab === item.id ? 'active' : ''}
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => selectNavTab(item.id)}
+                onPointerDown={(event) => {
+                  if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                    event.preventDefault()
+                    selectNavTab(item.id)
+                  }
+                }}
                 type="button"
                 title={item.label}
               >

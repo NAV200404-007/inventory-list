@@ -252,6 +252,7 @@
   gap: 7px;
   position: relative;
   isolation: isolate;
+  touch-action: manipulation;
 }
 
 .nav-list::before {
@@ -267,6 +268,7 @@
   transform: scale(0.94);
   transition: left 260ms cubic-bezier(0.2, 0.8, 0.2, 1), width 260ms ease, transform 180ms ease;
   z-index: -1;
+  pointer-events: none;
 }
 
 .role-card {
@@ -334,6 +336,10 @@ button {
   padding: 0 12px;
   color: #3a3a3c;
   background: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform;
 }
 
 .nav-list button:hover,
@@ -341,6 +347,10 @@ button {
   color: #244c67;
   background: rgba(255, 255, 255, 0.48);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.54), 0 10px 28px rgba(85, 113, 132, 0.1);
+}
+
+.nav-list button:active {
+  transform: scale(0.96);
 }
 
 .staff-switcher {
@@ -2271,6 +2281,7 @@ button,
     box-shadow: 0 20px 56px rgba(73, 101, 119, 0.2);
     backdrop-filter: blur(26px) saturate(170%);
     -webkit-backdrop-filter: blur(26px) saturate(170%);
+    touch-action: manipulation;
   }
 
   .brand,
@@ -2302,6 +2313,7 @@ button,
   .nav-list {
     grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
     gap: 6px;
+    align-items: stretch;
   }
 
   .nav-list button {
@@ -2312,12 +2324,22 @@ button,
     gap: 4px;
     padding: 0 8px;
     font-size: 0.74rem;
+    transform-origin: center;
   }
 
   .nav-list button.active {
     color: #ffffff;
     background: linear-gradient(135deg, #4f7fa3, #7fa8bf);
     box-shadow: 0 10px 20px rgba(79, 127, 163, 0.2);
+    transform: translateY(-1px);
+  }
+
+  .nav-list button:active {
+    transform: scale(0.94);
+  }
+
+  .nav-list button.active:active {
+    transform: translateY(-1px) scale(0.94);
   }
 
   .staff-switcher {
@@ -3289,6 +3311,10 @@ button:not(:disabled):active,
     padding: 5px 2px;
     border-radius: 18px;
     font-size: 0;
+    transition:
+      transform 130ms ease,
+      background 180ms ease,
+      box-shadow 180ms ease;
   }
 
   .nav-list button svg {
