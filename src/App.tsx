@@ -87,6 +87,7 @@ type EventRecord = {
   packingProgress: Record<string, boolean>
   packedAssetIds: Record<string, boolean>
   packedBy?: string
+  checkoutApproved: boolean
   checkedOutBy?: string
   returnReport?: Record<string, ReturnLine>
   assetReturnReport?: Record<string, AssetReturnLine>
@@ -171,6 +172,7 @@ function normalizeEventRecord(event: EventRecord & { staff?: string; recordId?: 
     endTime: event.endTime ?? '17:00',
     packingProgress: event.packingProgress ?? {},
     packedAssetIds: event.packedAssetIds ?? {},
+    checkoutApproved: event.checkoutApproved ?? false,
     status: normalizeEventStatus(event.status),
   }
 }
@@ -491,6 +493,7 @@ function App() {
     reservations: templates['VEX IQ workshop'],
     packingProgress: {},
     packedAssetIds: {},
+    checkoutApproved: false,
   })
   const [assetReturnLines, setAssetReturnLines] = useState<Record<string, AssetReturnLine>>({})
   const [checkoutMessage, setCheckoutMessage] = useState('')
@@ -1402,6 +1405,7 @@ function App() {
                 ),
               ),
               packedBy: currentStaff.name,
+              checkoutApproved: false,
             }
           : record,
       ),
@@ -1411,21 +1415,39 @@ function App() {
     addLog('Packed equipment', `${event.title} equipment marked as packed and ready.`)
   }
 
+  const approveCheckoutEvent = (eventId: string) => {
+    const event = events.find((record) => record.recordId === eventId)
+    if (!event || event.status !== 'Packed') return
+    const employeeNotifications = event.assignedEmployees.map((employeeName, index) => ({
+      id: 'note-' + Date.now() + '-checkout-' + index,
+      staff: employeeName,
+      eventId: event.recordId,
+      title: 'Checkout approved: ' + event.title,
+      message: currentStaff.name + ' approved checkout. You can now check out the packed items.',
+      read: false,
+    }))
+    setEvents((records) => records.map((record) => record.recordId === eventId ? { ...record, checkoutApproved: true } : record))
+    setNotifications((records) => [...employeeNotifications, ...records])
+    setCheckoutMessage('Checkout approved. Assigned employees have been notified.')
+    addLog('Approved checkout', event.title + ' is ready for employee checkout.')
+  }
+
   const checkoutEvent = (eventId: string) => {
     const event = events.find((record) => record.recordId === eventId)
-    if (!event) {
-      return
-    }
+    if (!event || event.status !== 'Packed' || !event.checkoutApproved || !event.assignedEmployees.includes(currentStaff.name)) return
 
-    setEvents((records) =>
-      records.map((record) =>
-        record.recordId === eventId
-          ? { ...record, status: 'Checked Out', checkedOutBy: currentStaff.name }
-          : record,
-      ),
-    )
-    setCheckoutMessage('Items checked out for deployment.')
-    addLog('Checked out equipment', `${event.title} equipment moved to Checked Out.`)
+    const employerNotifications = accounts.filter((account) => account.portal === 'employer').map((account, index) => ({
+      id: 'note-' + Date.now() + '-checked-out-' + index,
+      staff: account.name,
+      eventId: event.recordId,
+      title: 'Items checked out: ' + event.title,
+      message: currentStaff.name + ' checked out the packed items for deployment.',
+      read: false,
+    }))
+    setEvents((records) => records.map((record) => record.recordId === eventId ? { ...record, status: 'Checked Out', checkedOutBy: currentStaff.name } : record))
+    setNotifications((records) => [...employerNotifications, ...records])
+    setCheckoutMessage('Items checked out. Employer has been notified.')
+    addLog('Checked out equipment', event.title + ' equipment moved to Checked Out.')
   }
 
   const submitReturnReport = () => {
@@ -2691,29 +2713,22 @@ function App() {
                   </div>
 
                   <div className="action-row">
-                    {portalMode === 'employee' && (
-                      <button
-                        className="primary-action"
-                        disabled={
-                          (selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed') ||
-                          !selectedEventAllPacked
-                        }
-                        onClick={() => packEvent(selectedEvent.recordId)}
-                        type="button"
-                      >
+                    {portalMode === 'employee' && selectedEvent.status === 'Reserved' && (
+                      <button className="primary-action" disabled={!selectedEventAllPacked} onClick={() => packEvent(selectedEvent.recordId)} type="button">
                         <PackageCheck size={18} aria-hidden="true" />
                         Mark packed and ready
                       </button>
                     )}
-                    {portalMode === 'employer' && (
-                      <button
-                        className="secondary-action"
-                        disabled={selectedEvent.status !== 'Packed'}
-                        onClick={() => checkoutEvent(selectedEvent.recordId)}
-                        type="button"
-                      >
+                    {portalMode === 'employee' && selectedEvent.status === 'Packed' && (
+                      <button className="primary-action" disabled={!selectedEvent.checkoutApproved} onClick={() => checkoutEvent(selectedEvent.recordId)} type="button">
                         <Truck size={18} aria-hidden="true" />
-                        Approve checkout
+                        {selectedEvent.checkoutApproved ? 'Check out items' : 'Waiting for checkout approval'}
+                      </button>
+                    )}
+                    {portalMode === 'employer' && (
+                      <button className="secondary-action" disabled={selectedEvent.status !== 'Packed' || selectedEvent.checkoutApproved} onClick={() => approveCheckoutEvent(selectedEvent.recordId)} type="button">
+                        <Truck size={18} aria-hidden="true" />
+                        {selectedEvent.checkoutApproved ? 'Checkout approved' : 'Approve checkout'}
                       </button>
                     )}
                   </div>
