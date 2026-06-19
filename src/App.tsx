@@ -447,6 +447,8 @@ function App() {
     role: 'Employer',
   })
   const [selectedEventId, setSelectedEventId] = useState('')
+  const [eventDetailOpen, setEventDetailOpen] = useState(false)
+  const [plannerStep, setPlannerStep] = useState<1 | 2 | 3 | 4>(1)
   const [eventSearch, setEventSearch] = useState('')
   const [eventStatusFilter, setEventStatusFilter] = useState<'All' | EventStatus>('All')
   const [eventStaffFilter, setEventStaffFilter] = useState('All')
@@ -525,6 +527,8 @@ function App() {
     0,
   )
   const selectNavTab = useCallback((tabId: TabId) => {
+    if (tabId === 'events') setEventDetailOpen(false)
+    if (tabId === 'planner') setPlannerStep(1)
     setActiveTab((currentTab) => (currentTab === tabId ? currentTab : tabId))
   }, [])
   const staffNotifications = notifications.filter((notification) => notification.staff === currentStaff.name)
@@ -683,6 +687,17 @@ function App() {
   })
 
   const hasShortage = plannerLines.some((line) => line.shortage > 0)
+  const eventTimesValid =
+    new Date(newEvent.start + 'T' + newEvent.startTime).getTime() <
+    new Date(newEvent.end + 'T' + newEvent.endTime).getTime()
+  const plannerStepValid =
+    plannerStep === 1
+      ? Boolean(newEvent.title.trim() && newEvent.id.trim() && newEvent.location.trim() && eventTimesValid)
+      : plannerStep === 2
+        ? newEvent.assignedEmployees.length > 0
+        : plannerStep === 3
+          ? newEvent.reservations.some((reservation) => reservation.quantity > 0) && !hasShortage
+          : !hasShortage
   const activeEvents = events.filter((event) => event.status !== 'Closed')
   const visibleActiveEvents = visibleEvents.filter((event) => event.status !== 'Closed')
   const filteredVisibleEvents = visibleEvents.filter((event) => {
@@ -1198,10 +1213,64 @@ function App() {
     setEvents((records) => [eventToAdd, ...records])
     setNotifications((records) => [...assignedNotifications, ...records])
     setSelectedEventId(eventToAdd.recordId)
+    setEventDetailOpen(true)
+    setPlannerStep(1)
     setActiveTab('events')
     addLog(
       'Confirmed reservation and assigned staff',
       `${eventToAdd.id} assigned to ${eventToAdd.assignedEmployees.join(', ') || 'no employees'} at ${eventToAdd.location}.`,
+    )
+  }
+
+  const markAllPackingChecks = (eventId: string) => {
+    setEvents((records) =>
+      records.map((record) =>
+        record.recordId === eventId
+          ? {
+              ...record,
+              packedAssetIds: Object.fromEntries(
+                record.reservations.flatMap((reservation) =>
+                  (reservation.selectedAssetIds.length
+                    ? reservation.selectedAssetIds
+                    : [reservation.itemId + ':untracked']
+                  ).map((assetId) => [assetId, true]),
+                ),
+              ),
+              packingProgress: Object.fromEntries(
+                record.reservations.map((reservation) => [reservation.itemId, true]),
+              ),
+            }
+          : record,
+      ),
+    )
+  }
+
+  const markAllReturned = () => {
+    if (!selectedEvent) return
+    setAssetReturnLines(
+      Object.fromEntries(
+        selectedEvent.reservations.flatMap((reservation) =>
+          reservation.selectedAssetIds.map((assetId) => [
+            assetId,
+            { status: 'Returned', remarks: '' } as AssetReturnLine,
+          ]),
+        ),
+      ),
+    )
+  }
+
+  const refreshEventAssetIds = (eventId: string) => {
+    setEvents((records) =>
+      records.map((record) =>
+        record.recordId === eventId
+          ? {
+              ...record,
+              reservations: rebuildEventReservationAssets(record, record.reservations),
+              packingProgress: {},
+              packedAssetIds: {},
+            }
+          : record,
+      ),
     )
   }
 
@@ -1711,7 +1780,7 @@ function App() {
                   : 'Employer portal'}
             </div>
             {portalMode === 'employer' && (
-              <button type="button" onClick={() => setActiveTab('planner')}>
+              <button type="button" onClick={() => { setPlannerStep(1); setActiveTab('planner') }}>
                 <Plus size={17} aria-hidden="true" />
                 New event
               </button>
@@ -1721,45 +1790,55 @@ function App() {
 
         <div className="page-transition" key={activeTab}>
         {activeTab === 'dashboard' && (
-          <section className="panel-stack">
-            <div className="metric-grid">
-              <Metric
-                icon={PackageCheck}
-                label="Available stock"
-                value={dashboardStats.usable}
-                note="After damaged or missing"
-              />
-              <Metric
-                icon={Truck}
-                label="Reserved"
-                value={dashboardStats.reserved}
-                note="For active events"
-              />
-              <Metric
-                icon={CalendarDays}
-                label={portalMode === 'employee' ? 'My events' : 'Events'}
-                value={dashboardStats.upcoming}
-                note={portalMode === 'employee' ? 'Assigned to me' : 'Upcoming'}
-              />
+          <section className="panel-stack simple-home">
+            <section className="home-welcome">
+              <div>
+                <span className="eyebrow">{portalMode === 'employee' ? 'My workspace' : 'Employer workspace'}</span>
+                <h2>{portalMode === 'employee' ? 'Todays tasks' : 'What needs attention'}</h2>
+                <p>
+                  {portalMode === 'employee'
+                    ? 'Open an assigned event to continue packing or returns.'
+                    : 'Review upcoming events, staff updates, and inventory issues.'}
+                </p>
+              </div>
+              {portalMode === 'employer' && (
+                <button className="primary-action" onClick={() => { setPlannerStep(1); setActiveTab('planner') }} type="button">
+                  <Plus size={18} aria-hidden="true" />
+                  Create event
+                </button>
+              )}
+            </section>
+
+            <div className="home-focus-strip">
+              <button onClick={() => { setEventDetailOpen(false); setActiveTab('events') }} type="button">
+                <CalendarDays size={19} aria-hidden="true" />
+                <span>Active events</span>
+                <strong>{visibleActiveEvents.length}</strong>
+              </button>
+              <button onClick={() => setActiveTab(portalMode === 'employer' ? 'inventory' : 'events')} type="button">
+                <Boxes size={19} aria-hidden="true" />
+                <span>{portalMode === 'employer' ? 'Inventory issues' : 'Items assigned'}</span>
+                <strong>{portalMode === 'employer' ? dashboardStats.issues : dashboardStats.reserved}</strong>
+              </button>
+              <div>
+                <Bell size={19} aria-hidden="true" />
+                <span>Unread updates</span>
+                <strong>{unreadNotificationCount}</strong>
+              </div>
             </div>
 
-            <div className="two-column">
+            <div className="home-content-grid">
               <section className="surface">
-                <div className="section-heading">
+                <div className="section-heading compact-heading">
                   <div>
-                    <h2>{portalMode === 'employee' ? 'My assigned events' : 'Upcoming events'}</h2>
-                    <p>Select an event to view the packing list.</p>
+                    <h2>{portalMode === 'employee' ? 'Assigned to me' : 'Upcoming events'}</h2>
+                    <p>{visibleActiveEvents.length ? 'Tap an event to open its details.' : 'Nothing scheduled yet.'}</p>
                   </div>
+                  <button className="text-action" onClick={() => { setEventDetailOpen(false); setActiveTab('events') }} type="button">See all</button>
                 </div>
                 <div className="event-list compact">
-                  {visibleActiveEvents.length === 0 && (
-                    <div className="empty-state">
-                      {portalMode === 'employee'
-                        ? 'No assigned active events yet.'
-                        : 'No active events yet. Create an event to get started.'}
-                    </div>
-                  )}
-                  {visibleActiveEvents.map((event) => (
+                  {visibleActiveEvents.length === 0 && <div className="empty-state">{portalMode === 'employee' ? 'No active tasks assigned.' : 'Create an event to get started.'}</div>}
+                  {visibleActiveEvents.slice(0, 3).map((event) => (
                     <EventSummary
                       event={event}
                       inventoryById={inventoryById}
@@ -1767,6 +1846,7 @@ function App() {
                       onSelect={() => {
                         setCheckoutMessage('')
                         setSelectedEventId(event.recordId)
+                        setEventDetailOpen(true)
                         setActiveTab('events')
                       }}
                     />
@@ -1775,128 +1855,53 @@ function App() {
               </section>
 
               <section className="surface">
-                {staffNotifications.length > 0 && (
-                  <>
-                    <div className="section-heading">
-                      <div>
-                        <h2>Notifications</h2>
-                        <p>
-                          {portalMode === 'employee'
-                            ? 'Assignments and updates for your events.'
-                            : 'Updates from employees after packing or checkout.'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="notification-list">
-                      {staffNotifications.map((notification) => (
-                        <button
-                          className={notification.read ? 'notification-row read' : 'notification-row'}
-                          key={notification.id}
-                          onClick={() => {
-                            setNotifications((records) =>
-                              records.map((record) =>
-                                record.id === notification.id ? { ...record, read: true } : record,
-                              ),
-                            )
-                            setSelectedEventId(notification.eventId)
-                            setActiveTab('events')
-                          }}
-                          type="button"
-                        >
-                          <strong>{notification.title}</strong>
-                          <span>{notification.message}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-                <div className="section-heading">
+                <div className="section-heading compact-heading">
                   <div>
-                    <h2>{portalMode === 'employee' ? 'My next steps' : 'Quick actions'}</h2>
-                    <p>
-                      {portalMode === 'employee'
-                        ? 'Open your event, pack the listed items, then check them out.'
-                        : 'Most common things to do from here.'}
-                    </p>
+                    <h2>Recent updates</h2>
+                    <p>Assignments, packing, and return activity.</p>
                   </div>
                 </div>
-                <div className="quick-actions">
-                  {portalMode === 'employer' && (
-                    <button type="button" onClick={() => setActiveTab('planner')}>
-                      <Plus size={18} aria-hidden="true" />
-                      Create event
+                <div className="notification-list">
+                  {staffNotifications.length === 0 && <div className="empty-state">No new updates.</div>}
+                  {staffNotifications.slice(0, 3).map((notification) => (
+                    <button
+                      className={notification.read ? 'notification-row read' : 'notification-row'}
+                      key={notification.id}
+                      onClick={() => {
+                        setNotifications((records) => records.map((record) => record.id === notification.id ? { ...record, read: true } : record))
+                        setSelectedEventId(notification.eventId)
+                        setEventDetailOpen(true)
+                        setActiveTab('events')
+                      }}
+                      type="button"
+                    >
+                      <strong>{notification.title}</strong>
+                      <span>{notification.message}</span>
                     </button>
-                  )}
-                  {portalMode === 'employer' && (
-                    <button type="button" onClick={() => setActiveTab('inventory')}>
-                      <Boxes size={18} aria-hidden="true" />
-                      Edit inventory
-                    </button>
-                  )}
-                  <button type="button" onClick={() => setActiveTab('events')}>
-                    <ClipboardList size={18} aria-hidden="true" />
-                    {portalMode === 'employee' ? 'Open my packing list' : 'View packing lists'}
-                  </button>
+                  ))}
                 </div>
-
-                {portalMode === 'employer' && (
-                  <div className="user-management">
-                    <div className="section-heading compact-heading">
-                      <div>
-                        <h2>Manage users</h2>
-                        <p>Add users from login, or remove accounts here.</p>
-                      </div>
-                    </div>
-                    <div className="user-list">
-                      {accounts.map((account) => {
-                        const isCurrentUser = account.name === currentStaff.name
-                        const isLastEmployer = account.portal === 'employer' && employerCount <= 1
-                        const cannotDelete = isCurrentUser || isLastEmployer
-
-                        return (
-                          <div className="user-row" key={account.name}>
-                            <div>
-                              <strong>{account.name}</strong>
-                              <span>
-                                {account.role} - {account.portal === 'employer' ? 'Employer login' : 'Employee login'}
-                              </span>
-                            </div>
-                            <button
-                              disabled={cannotDelete}
-                              onClick={() => deleteAccount(account.name)}
-                              title={
-                                isCurrentUser
-                                  ? 'You are signed in with this account'
-                                  : isLastEmployer
-                                    ? 'Keep at least one employer account'
-                                    : `Delete ${account.name}`
-                              }
-                              type="button"
-                            >
-                              <Trash2 size={17} aria-hidden="true" />
-                              Delete
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                    {userManagementMessage && (
-                      <p className="inline-success">{userManagementMessage}</p>
-                    )}
-                  </div>
-                )}
-
-                {portalMode === 'employer' && <div className="simple-flow">
-                  <h2>Simple flow</h2>
-                  <ol>
-                    <li>Employer creates event and assigns a staff team.</li>
-                    <li>System checks available Laptop, iPad, VEX IQ, and UARO stock.</li>
-                    <li>Assigned employees see the shared task and packing list.</li>
-                    <li>Employee checks out and returns items after the event.</li>
-                  </ol>
-                </div>}
               </section>
             </div>
+
+            {portalMode === 'employer' && (
+              <details className="surface management-disclosure">
+                <summary>Manage user accounts</summary>
+                <div className="user-list">
+                  {accounts.map((account) => {
+                    const isCurrentUser = account.name === currentStaff.name
+                    const isLastEmployer = account.portal === 'employer' && employerCount <= 1
+                    const cannotDelete = isCurrentUser || isLastEmployer
+                    return (
+                      <div className="user-row" key={account.name}>
+                        <div><strong>{account.name}</strong><span>{account.role}</span></div>
+                        <button disabled={cannotDelete} onClick={() => deleteAccount(account.name)} type="button"><Trash2 size={17} aria-hidden="true" />Delete</button>
+                      </div>
+                    )
+                  })}
+                </div>
+                {userManagementMessage && <p className="inline-success">{userManagementMessage}</p>}
+              </details>
+            )}
           </section>
         )}
 
@@ -2135,233 +2140,166 @@ function App() {
         )}
 
         {activeTab === 'planner' && (
-          <section className="panel-stack">
-            <section className="surface planner-grid">
-              <div className="form-panel">
-                <div className="section-heading step-heading">
-                  <span>1</span>
-                  <div>
-                    <h2>Event details</h2>
-                    <p>Set the event, location, dates, and assigned team.</p>
+          <section className="surface event-wizard">
+            <div className="wizard-header">
+              <div>
+                <span className="eyebrow">Create event</span>
+                <h2>{['Event details', 'Assign staff', 'Equipment', 'Review and reserve'][plannerStep - 1]}</h2>
+                <p>Step {plannerStep} of 4</p>
+              </div>
+              <div className="wizard-progress" aria-label="Event creation progress">
+                {['Details', 'Staff', 'Equipment', 'Review'].map((label, index) => (
+                  <button
+                    className={plannerStep === index + 1 ? 'active' : plannerStep > index + 1 ? 'complete' : ''}
+                    key={label}
+                    onClick={() => index + 1 <= plannerStep && setPlannerStep((index + 1) as 1 | 2 | 3 | 4)}
+                    type="button"
+                  >
+                    <span>{index + 1}</span>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="wizard-panel">
+              {plannerStep === 1 && (
+                <div className="wizard-form">
+                  <div className="form-grid">
+                    <label className="full-field">
+                      Event name
+                      <input value={newEvent.title} onChange={(event) => setNewEvent((record) => ({ ...record, title: event.target.value }))} />
+                    </label>
+                    <label>
+                      Event ID
+                      <input value={newEvent.id} onChange={(event) => setNewEvent((record) => ({ ...record, id: event.target.value }))} />
+                    </label>
+                    <label>
+                      Event type
+                      <input list="event-type-options" value={newEvent.type} onChange={(event) => setNewEvent((record) => ({ ...record, type: event.target.value }))} />
+                      <datalist id="event-type-options">
+                        {Object.keys(templates).map((template) => <option key={template} value={template} />)}
+                      </datalist>
+                    </label>
+                    <label className="full-field">
+                      Event location
+                      <input value={newEvent.location} onChange={(event) => setNewEvent((record) => ({ ...record, location: event.target.value }))} />
+                    </label>
+                    <label>
+                      Start date
+                      <input type="date" value={newEvent.start} onChange={(event) => setNewEvent((record) => ({ ...record, start: event.target.value }))} />
+                    </label>
+                    <label>
+                      Start time
+                      <input type="time" value={newEvent.startTime} onChange={(event) => setNewEvent((record) => ({ ...record, startTime: event.target.value }))} />
+                    </label>
+                    <label>
+                      End date
+                      <input type="date" value={newEvent.end} onChange={(event) => setNewEvent((record) => ({ ...record, end: event.target.value }))} />
+                    </label>
+                    <label>
+                      End time
+                      <input type="time" value={newEvent.endTime} onChange={(event) => setNewEvent((record) => ({ ...record, endTime: event.target.value }))} />
+                    </label>
                   </div>
+                  {!eventTimesValid && <p className="form-error">The event must end after it starts.</p>}
                 </div>
+              )}
 
-                <label>
-                  Event name
-                  <input
-                    value={newEvent.title}
-                    onChange={(event) =>
-                      setNewEvent((record) => ({ ...record, title: event.target.value }))
-                    }
-                  />
-                </label>
-
-                <div className="form-grid">
-                  <label>
-                    Event ID
-                    <input
-                      value={newEvent.id}
-                      onChange={(event) =>
-                        setNewEvent((record) => ({ ...record, id: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Event location
-                    <input
-                      value={newEvent.location}
-                      onChange={(event) =>
-                        setNewEvent((record) => ({ ...record, location: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Event type
-                    <input
-                      list="event-type-options"
-                      value={newEvent.type}
-                      onChange={(event) =>
-                        setNewEvent((record) => ({ ...record, type: event.target.value }))
-                      }
-                    />
-                    <datalist id="event-type-options">
-                      {Object.keys(templates).map((template) => (
-                        <option key={template} value={template} />
-                      ))}
-                    </datalist>
-                  </label>
-                  <div className="team-selector">
-                    <span>Assigned staff</span>
-                    <div className="team-options">
-                      {assignableStaff.length === 0 && (
-                        <p className="empty-state">Add employee accounts before assigning a team.</p>
-                      )}
-                      {assignableStaff.map((staff) => (
-                        <button
-                          className={newEvent.assignedEmployees.includes(staff.name) ? 'selected' : ''}
-                          key={staff.name}
-                          onClick={() => toggleAssignedEmployee(staff.name)}
-                          type="button"
-                        >
-                          {staff.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <label>
-                    Start date
-                    <input
-                      type="date"
-                      value={newEvent.start}
-                      onChange={(event) =>
-                        setNewEvent((record) => ({ ...record, start: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Start time
-                    <input
-                      type="time"
-                      value={newEvent.startTime}
-                      onChange={(event) =>
-                        setNewEvent((record) => ({ ...record, startTime: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    End date
-                    <input
-                      type="date"
-                      value={newEvent.end}
-                      onChange={(event) =>
-                        setNewEvent((record) => ({ ...record, end: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    End time
-                    <input
-                      type="time"
-                      value={newEvent.endTime}
-                      onChange={(event) =>
-                        setNewEvent((record) => ({ ...record, endTime: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Created by
-                    <input value={currentStaff.name} readOnly />
-                  </label>
-                </div>
-
-                <div className="step-divider">
-                  <div className="section-heading step-heading">
-                    <span>2</span>
+              {plannerStep === 2 && (
+                <div className="wizard-form">
+                  <div className="section-heading compact-heading">
                     <div>
-                      <h2>Equipment needed</h2>
-                      <p>Add items and enter the quantity required.</p>
+                      <h2>Who is handling this event?</h2>
+                      <p>Select one or more employees. Everyone selected receives the task.</p>
                     </div>
                   </div>
+                  <div className="team-options staff-choice-grid">
+                    {assignableStaff.length === 0 && <p className="empty-state">Add employee accounts before assigning a team.</p>}
+                    {assignableStaff.map((staff) => (
+                      <button className={newEvent.assignedEmployees.includes(staff.name) ? 'selected' : ''} key={staff.name} onClick={() => toggleAssignedEmployee(staff.name)} type="button">
+                        <UserCog size={18} aria-hidden="true" />
+                        <span>{staff.name}</span>
+                        <small>{newEvent.assignedEmployees.includes(staff.name) ? 'Assigned' : 'Tap to assign'}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-                  <label>
+              {plannerStep === 3 && (
+                <div className="wizard-form">
+                  <label className="equipment-picker">
                     Add equipment
-                    <select
-                      value=""
-                      onChange={(event) => addReservationItem(event.target.value)}
-                    >
-                      <option value="" disabled>
-                        Select inventory item
-                      </option>
-                      {inventory.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                        </option>
+                    <select value="" onChange={(event) => addReservationItem(event.target.value)}>
+                      <option value="" disabled>Select inventory item</option>
+                      {inventory.filter((item) => !newEvent.reservations.some((reservation) => reservation.itemId === item.id)).map((item) => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
                       ))}
                     </select>
                   </label>
-                </div>
-              </div>
-
-              <div className="allocation-panel">
-                <div className="section-heading step-heading">
-                  <span>3</span>
-                  <div>
-                    <h2>Check and confirm</h2>
-                    <p>
-                      {formatEventSchedule(newEvent)}
-                    </p>
+                  <div className="wizard-equipment-list">
+                    {plannerLines.map((line) => (
+                      <div className="wizard-equipment-row" key={line.item.id}>
+                        <div>
+                          <strong>{line.item.name}</strong>
+                          <span>{line.available} available</span>
+                          <AssetIdPreview assetIds={pickAssetIds(line.item, line.quantity, events, newEvent.start, newEvent.end)} />
+                        </div>
+                        <label>
+                          Quantity
+                          <input aria-label={line.item.name + ' quantity'} inputMode="numeric" min={0} pattern="[0-9]*" step={1} type="number" value={line.quantity} onChange={(event) => updateReservation(line.item.id, event.target.value)} />
+                        </label>
+                        <Badge tone={line.shortage > 0 ? 'danger' : 'success'}>{line.shortage > 0 ? line.shortage + ' short' : 'Available'}</Badge>
+                        <button className="icon-action danger" onClick={() => removeReservationItem(line.item.id)} type="button"><Trash2 size={16} aria-hidden="true" /><span className="sr-only">Remove {line.item.name}</span></button>
+                      </div>
+                    ))}
                   </div>
-                  <Badge tone={hasShortage ? 'danger' : 'success'}>
-                    {hasShortage ? 'Shortage found' : 'Ready to reserve'}
-                  </Badge>
+                  {inventoryQuantityError && <p className="form-error">{inventoryQuantityError}</p>}
                 </div>
-
-                <div className="allocation-table">
-                  {plannerLines.map((line) => (
-                    <div className="allocation-row" key={line.item.id}>
-                      <div>
-                        <strong>{line.item.name}</strong>
-                        <AssetIdPreview
-                          assetIds={pickAssetIds(
-                            line.item,
-                            line.quantity,
-                            events,
-                            newEvent.start,
-                            newEvent.end,
-                          )}
-                        />
-                      </div>
-                      <input
-                        aria-label={`${line.item.name} quantity`}
-                        inputMode="numeric"
-                        min={0}
-                        pattern="[0-9]*"
-                        step={1}
-                        type="number"
-                        value={line.quantity}
-                        onChange={(event) =>
-                          updateReservation(line.item.id, event.target.value)
-                        }
-                      />
-                      <div className="availability">
-                        <strong>{line.available}</strong>
-                        <span>available</span>
-                      </div>
-                      <Badge tone={line.shortage > 0 ? 'danger' : 'success'}>
-                        {line.shortage > 0 ? `${line.shortage} short` : 'OK'}
-                      </Badge>
-                      <button
-                        className="icon-action danger"
-                        onClick={() => removeReservationItem(line.item.id)}
-                        title={`Remove ${line.item.name}`}
-                        type="button"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  className="primary-action"
-                  disabled={hasShortage}
-                  onClick={confirmEvent}
-                  type="button"
-                >
-                  <CheckCircle2 size={18} aria-hidden="true" />
-                  Confirm reservation
-                </button>
-              </div>
-              {inventoryQuantityError && (
-                <p className="form-error quantity-warning">{inventoryQuantityError}</p>
               )}
-            </section>
+
+              {plannerStep === 4 && (
+                <div className="wizard-review">
+                  <div className="review-event-heading">
+                    <div>
+                      <span className="eyebrow">{newEvent.id}</span>
+                      <h2>{newEvent.title}</h2>
+                      <p>{newEvent.location} � {formatEventSchedule(newEvent)}</p>
+                    </div>
+                    <Badge tone={hasShortage ? 'danger' : 'success'}>{hasShortage ? 'Shortage found' : 'Ready to reserve'}</Badge>
+                  </div>
+                  <div className="review-section">
+                    <strong>Assigned staff</strong>
+                    <TeamChips employees={newEvent.assignedEmployees} />
+                  </div>
+                  <div className="review-equipment">
+                    {plannerLines.map((line) => (
+                      <div key={line.item.id}>
+                        <span>{line.item.name}</span>
+                        <strong>{line.quantity}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="wizard-actions">
+              <button className="secondary-action" disabled={plannerStep === 1} onClick={() => setPlannerStep((plannerStep - 1) as 1 | 2 | 3 | 4)} type="button">Back</button>
+              {plannerStep < 4 ? (
+                <button className="primary-action" disabled={!plannerStepValid} onClick={() => setPlannerStep((plannerStep + 1) as 1 | 2 | 3 | 4)} type="button">Continue</button>
+              ) : (
+                <button className="primary-action" disabled={!plannerStepValid} onClick={confirmEvent} type="button"><CheckCircle2 size={18} aria-hidden="true" />Confirm reservation</button>
+              )}
+            </div>
           </section>
         )}
 
         {activeTab === 'events' && (
-          <section className="panel-stack two-column event-workspace">
-            <section className="surface">
+          <section className="panel-stack event-workspace">
+            {!eventDetailOpen && (
+            <section className="surface event-list-page">
               <div className="section-heading">
                 <div>
                   <h2>{portalMode === 'employee' ? 'My events' : 'Events'}</h2>
@@ -2423,6 +2361,7 @@ function App() {
                     onSelect={() => {
                       setCheckoutMessage('')
                       setSelectedEventId(event.recordId)
+                      setEventDetailOpen(true)
                       setEditingPackingEventId('')
                     }}
                   />
@@ -2430,8 +2369,11 @@ function App() {
               </div>
             </section>
 
-            <section className="surface">
+            )}
+            {eventDetailOpen && (
+            <section className="surface event-detail-page">
               <div className="section-heading">
+                <button className="back-link" onClick={() => setEventDetailOpen(false)} type="button">Back to events</button>
                 <div>
                   <h2>{portalMode === 'employee' ? 'My task' : 'Packing list'}</h2>
                   <p>{selectedEvent ? selectedEvent.title : 'Select an event'}</p>
@@ -2478,8 +2420,19 @@ function App() {
                       <span style={{ width: `${selectedEventPackingPercent}%` }} />
                     </div>
                   </div>
+                  {portalMode === 'employee' &&
+                    (selectedEvent.status === 'Reserved' || selectedEvent.status === 'Packed') && (
+                      <button className="secondary-action bulk-action" onClick={() => markAllPackingChecks(selectedEvent.recordId)} type="button">
+                        <CheckCircle2 size={17} aria-hidden="true" />
+                        Check all items
+                      </button>
+                    )}
                   {portalMode === 'employer' && selectedEventEditMode && (
                     <div className="packing-edit-panel">
+                      <button className="secondary-action" onClick={() => refreshEventAssetIds(selectedEvent.recordId)} type="button">
+                        <Boxes size={17} aria-hidden="true" />
+                        Auto-assign available IDs
+                      </button>
                       <div className="team-selector">
                         <span>Assigned packing staff</span>
                         <div className="team-options">
@@ -2668,6 +2621,7 @@ function App() {
                 </>
               )}
             </section>
+            )}
           </section>
         )}
 
@@ -2867,7 +2821,14 @@ function App() {
                     : 'Review the submitted return report before closing the event.'}
                 </p>
               </div>
-              <select
+              <div className="return-heading-actions">
+                {portalMode === 'employee' && (
+                  <button className="secondary-action" onClick={markAllReturned} type="button">
+                    <CheckCircle2 size={17} aria-hidden="true" />
+                    Mark all returned
+                  </button>
+                )}
+                              <select
                 value={selectedEvent.recordId}
                 onChange={(event) => setSelectedEventId(event.target.value)}
               >
@@ -2877,6 +2838,7 @@ function App() {
                   </option>
                 ))}
               </select>
+              </div>
             </div>
 
             <div className="return-trace">
@@ -3046,31 +3008,6 @@ function App() {
   )
 }
 
-function Metric({
-  icon: Icon,
-  label,
-  note,
-  value,
-}: {
-  icon: typeof BarChart3
-  label: string
-  note: string
-  value: number
-}) {
-  return (
-    <section className="metric-card">
-      <div className="metric-icon">
-        <Icon size={20} aria-hidden="true" />
-      </div>
-      <div>
-        <span>{label}</span>
-        <strong>{value}</strong>
-        <p>{note}</p>
-      </div>
-    </section>
-  )
-}
-
 function FlowStep({ index, text, title }: { index: number; text: string; title: string }) {
   return (
     <div className="flow-step">
@@ -3229,17 +3166,13 @@ function AssetIdPreview({ assetIds }: { assetIds: string[] }) {
     return <span className="asset-id-summary">IDs assigned after confirmation</span>
   }
 
-  const firstId = assetIds[0]
-  const lastId = assetIds[assetIds.length - 1]
-  const idText =
-    assetIds.length === 1
-      ? firstId
-      : `${firstId} to ${lastId} (${assetIds.length} items)`
-
   return (
-    <span className="asset-id-summary" aria-label="Assigned item IDs">
-      IDs: {idText}
-    </span>
+    <details className="asset-preview">
+      <summary>{assetIds.length === 1 ? assetIds[0] : 'View ' + assetIds.length + ' item IDs'}</summary>
+      <div>
+        {assetIds.map((assetId) => <span key={assetId}>{assetId}</span>)}
+      </div>
+    </details>
   )
 }
 
