@@ -4385,3 +4385,28 @@ button:not(:disabled):active,
   color: #ffd08a;
   background: rgba(255, 149, 0, 0.13);
 }
+
+
+.asset-check-row.employer-view {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.asset-list-id {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+
+.asset-check-row.employer-view .badge {
+  justify-self: end;
+}
+
+@media (max-width: 560px) {
+  .asset-check-row.employer-view {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .asset-check-row.employer-view .badge {
+    grid-column: auto;
+  }
+}

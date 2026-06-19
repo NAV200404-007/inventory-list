@@ -2668,9 +2668,19 @@ function App() {
                           </div>
                           <div className="asset-checklist">
                             {(reservation.selectedAssetIds.length ? reservation.selectedAssetIds : [reservation.itemId + ':untracked']).map((assetId, assetIndex) => (
-                              <div className="asset-check-row" key={assetId + assetIndex}>
-                                <input aria-label={'Pack ' + assetId} checked={selectedEvent.packedAssetIds[assetId] ?? false} disabled={portalMode !== 'employee' || (selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed')} type="checkbox" onChange={(event) => togglePackedAsset(selectedEvent.recordId, reservation.itemId, assetId, event.target.checked)} />
-                                {reservation.selectedAssetIds.length ? <input aria-label={item.name + ' asset ID ' + (assetIndex + 1)} className="asset-id-input" disabled={selectedEvent.status === 'Closed'} value={assetId} onChange={(event) => updateAssignedAssetId(selectedEvent.recordId, reservation.itemId, assetIndex, event.target.value)} /> : <span className="asset-id-summary">Untracked item</span>}
+                              <div className={'asset-check-row ' + (portalMode === 'employer' ? 'employer-view' : 'employee-view')} key={assetId + assetIndex}>
+                                {portalMode === 'employee' && (
+                                  <input aria-label={'Pack ' + assetId} checked={selectedEvent.packedAssetIds[assetId] ?? false} disabled={selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed'} type="checkbox" onChange={(event) => togglePackedAsset(selectedEvent.recordId, reservation.itemId, assetId, event.target.checked)} />
+                                )}
+                                {reservation.selectedAssetIds.length ? (
+                                  portalMode === 'employer' && !selectedEventEditMode ? (
+                                    <strong className="asset-list-id">{assetId}</strong>
+                                  ) : (
+                                    <input aria-label={item.name + ' asset ID ' + (assetIndex + 1)} className="asset-id-input" disabled={selectedEvent.status === 'Closed'} value={assetId} onChange={(event) => updateAssignedAssetId(selectedEvent.recordId, reservation.itemId, assetIndex, event.target.value)} />
+                                  )
+                                ) : (
+                                  <span className="asset-id-summary">Untracked item</span>
+                                )}
                                 <Badge tone={assetJourneyTone(assetJourneyStatus(selectedEvent, assetId))}>{assetJourneyStatus(selectedEvent, assetId)}</Badge>
                               </div>
                             ))}
