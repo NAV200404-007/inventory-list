@@ -430,7 +430,9 @@ function pickAssetIds(
   end: string,
 ) {
   const used = new Set(usedAssetIdsForItem(events, item.id, start, end))
-  return item.assetIds.filter((assetId) => !used.has(assetId)).slice(0, quantity)
+  return item.assetIds
+    .filter((assetId) => !used.has(assetId) && !item.assetConditions?.[assetId])
+    .slice(0, quantity)
 }
 
 function App() {
