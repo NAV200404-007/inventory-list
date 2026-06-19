@@ -3594,3 +3594,111 @@ button:not(:disabled):active,
   background: #101827;
   color: #f8fafc;
 }
+
+/* Dark-mode contrast guardrails: keep interactive/card text readable on dark surfaces. */
+.dark-mode,
+.dark-mode button,
+.dark-mode input,
+.dark-mode select,
+.dark-mode textarea {
+  color: #f8fafc;
+}
+
+.dark-mode .notification-row,
+.dark-mode .quick-actions button,
+.dark-mode .profile-actions button,
+.dark-mode .event-card,
+.dark-mode .metric-card,
+.dark-mode .surface,
+.dark-mode .status-cell,
+.dark-mode .table-header,
+.dark-mode .allocation-row,
+.dark-mode .inventory-row,
+.dark-mode .return-row,
+.dark-mode .packing-row,
+.dark-mode .audit-row,
+.dark-mode .flow-step,
+.dark-mode .settings-row,
+.dark-mode .settings-password {
+  color: #f8fafc;
+}
+
+.dark-mode .notification-row strong,
+.dark-mode .notification-row b,
+.dark-mode .quick-actions button,
+.dark-mode .quick-actions button span,
+.dark-mode .quick-actions button strong,
+.dark-mode .profile-actions button,
+.dark-mode .profile-actions button span,
+.dark-mode .profile-actions button strong,
+.dark-mode .event-card strong,
+.dark-mode .metric-card strong,
+.dark-mode .audit-row strong,
+.dark-mode .flow-step strong,
+.dark-mode .packing-row strong,
+.dark-mode .return-row strong,
+.dark-mode .return-summary-row strong,
+.dark-mode .inventory-row strong,
+.dark-mode .allocation-row strong,
+.dark-mode .usage-row strong,
+.dark-mode .table-header,
+.dark-mode .status-cell,
+.dark-mode .badge {
+  color: #f8fafc !important;
+}
+
+.dark-mode .notification-row span,
+.dark-mode .notification-row p,
+.dark-mode .quick-actions button small,
+.dark-mode .profile-actions button small,
+.dark-mode .event-card span,
+.dark-mode .event-card p,
+.dark-mode .metric-card span,
+.dark-mode .metric-card p,
+.dark-mode .audit-row span,
+.dark-mode .audit-row p,
+.dark-mode .flow-step p,
+.dark-mode .packing-row span,
+.dark-mode .return-row span,
+.dark-mode .return-row label,
+.dark-mode .return-summary-row span,
+.dark-mode .return-summary-row p,
+.dark-mode .inventory-row span,
+.dark-mode .allocation-row span,
+.dark-mode .usage-row,
+.dark-mode .availability span,
+.dark-mode .asset-id-summary,
+.dark-mode .empty-state {
+  color: #cbd5e1 !important;
+}
+
+.dark-mode .quick-actions button svg,
+.dark-mode .profile-actions button svg {
+  color: #ffffff;
+}
+
+.dark-mode .badge.success {
+  border-color: rgba(52, 199, 89, 0.3);
+  background: rgba(52, 199, 89, 0.16);
+  color: #9ff5b4 !important;
+}
+
+.dark-mode .badge.warning {
+  border-color: rgba(255, 149, 0, 0.34);
+  background: rgba(255, 149, 0, 0.16);
+  color: #ffd38a !important;
+}
+
+.dark-mode .badge.danger {
+  border-color: rgba(255, 59, 48, 0.34);
+  background: rgba(255, 59, 48, 0.16);
+  color: #ffb4ae !important;
+}
+
+.dark-mode .badge.info,
+.dark-mode .badge.neutral,
+.dark-mode .premium-pill,
+.dark-mode .notification-pill,
+.dark-mode .team-chips span {
+  color: #eaf4ff !important;
+}
