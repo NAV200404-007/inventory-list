@@ -1289,6 +1289,54 @@ label {
   box-shadow: 0 20px 44px rgba(85, 113, 132, 0.14);
 }
 
+.settings-panel {
+  grid-column: 1 / -1;
+}
+
+.settings-list {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-row,
+.settings-password {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.settings-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.settings-row strong,
+.settings-password strong {
+  display: block;
+  color: #111827;
+}
+
+.settings-row span,
+.settings-password span {
+  display: block;
+  margin-top: 3px;
+  color: #667085;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.settings-password {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+}
+
+.settings-password > div {
+  grid-column: 1 / -1;
+}
+
 .profile-activity {
   display: grid;
   gap: 10px;
@@ -1547,6 +1595,16 @@ button:focus-visible {
   font-weight: 800;
 }
 
+.packing-edit-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
 .packing-add-item select {
   min-height: 42px;
 }
@@ -1727,7 +1785,62 @@ button:focus-visible {
 
 .return-table .table-header,
 .return-row {
-  grid-template-columns: minmax(200px, 1fr) 110px repeat(3, 110px);
+  grid-template-columns: minmax(190px, 1fr) 96px repeat(3, 120px) minmax(180px, 1fr);
+}
+
+.return-row label {
+  margin: 0;
+  color: #667085;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.return-row span,
+.return-row p {
+  overflow-wrap: anywhere;
+}
+
+.return-summary {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.38);
+  box-shadow: 0 12px 30px rgba(85, 113, 132, 0.08);
+}
+
+.return-summary-list {
+  display: grid;
+  gap: 8px;
+}
+
+.return-summary-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) repeat(4, auto);
+  align-items: center;
+  gap: 8px 12px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.return-summary-row strong {
+  color: #111827;
+}
+
+.return-summary-row span,
+.return-summary-row p {
+  margin: 0;
+  color: #667085;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.return-summary-row p {
+  grid-column: 1 / -1;
 }
 
 .audit-row {
@@ -2238,6 +2351,12 @@ button,
     grid-template-columns: 1fr;
   }
 
+  .settings-row,
+  .settings-password,
+  .return-summary-row {
+    grid-template-columns: 1fr;
+  }
+
   .profile-title {
     gap: 12px;
   }
@@ -2274,6 +2393,10 @@ button,
   .table-header,
   .return-table .table-header {
     grid-template-columns: 1fr;
+  }
+
+  .return-summary-row p {
+    grid-column: auto;
   }
 
   .table-header {
@@ -2730,7 +2853,12 @@ button:not(:disabled):active,
 .dark-mode .add-inventory-panel,
 .dark-mode .progress-step,
 .dark-mode .packing-progress,
-.dark-mode .user-row {
+.dark-mode .user-row,
+.dark-mode .settings-row,
+.dark-mode .settings-password,
+.dark-mode .packing-edit-panel,
+.dark-mode .return-summary,
+.dark-mode .return-summary-row {
   border-color: rgba(148, 163, 184, 0.26);
   background: rgba(15, 23, 42, 0.62);
   box-shadow: 0 22px 60px rgba(0, 0, 0, 0.26);
@@ -2754,6 +2882,9 @@ button:not(:disabled):active,
 .dark-mode .availability strong,
 .dark-mode .staff-switcher p,
 .dark-mode .packing-progress strong,
+.dark-mode .settings-row strong,
+.dark-mode .settings-password strong,
+.dark-mode .return-summary-row strong,
 .dark-mode label {
   color: #f8fafc;
 }
@@ -2777,7 +2908,13 @@ button:not(:disabled):active,
 .dark-mode .user-row span,
 .dark-mode .notification-row span,
 .dark-mode .asset-id-summary,
-.dark-mode .packing-progress span {
+.dark-mode .packing-progress span,
+.dark-mode .settings-row span,
+.dark-mode .settings-password span,
+.dark-mode .return-summary-row span,
+.dark-mode .return-summary-row p,
+.dark-mode .return-row label,
+.dark-mode .return-row span {
   color: #aab6c7;
 }
 
@@ -3355,7 +3492,12 @@ button:not(:disabled):active,
 .dark-mode .profile-actions button,
 .dark-mode .progress-step,
 .dark-mode .packing-progress,
-.dark-mode .user-row {
+.dark-mode .user-row,
+.dark-mode .settings-row,
+.dark-mode .settings-password,
+.dark-mode .packing-edit-panel,
+.dark-mode .return-summary,
+.dark-mode .return-summary-row {
   border-color: rgba(148, 163, 184, 0.28);
   background-color: rgba(15, 23, 42, 0.64);
 }
@@ -3371,6 +3513,9 @@ button:not(:disabled):active,
 .dark-mode .profile-stats strong,
 .dark-mode .profile-detail-list dd,
 .dark-mode .user-row strong,
+.dark-mode .settings-row strong,
+.dark-mode .settings-password strong,
+.dark-mode .return-summary-row strong,
 .dark-mode label {
   color: #f8fafc;
 }
@@ -3384,7 +3529,13 @@ button:not(:disabled):active,
 .dark-mode .item-cell span,
 .dark-mode .asset-id-summary,
 .dark-mode .profile-stats span,
-.dark-mode .profile-detail-list dt {
+.dark-mode .profile-detail-list dt,
+.dark-mode .settings-row span,
+.dark-mode .settings-password span,
+.dark-mode .return-summary-row span,
+.dark-mode .return-summary-row p,
+.dark-mode .return-row label,
+.dark-mode .return-row span {
   color: #aab6c7;
 }
 

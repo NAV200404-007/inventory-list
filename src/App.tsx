@@ -100,6 +100,7 @@ type ReturnLine = {
   returned: number
   damaged: number
   missing: number
+  remarks: string
 }
 
 type TabId = 'dashboard' | 'planner' | 'events' | 'inventory' | 'returns' | 'audit' | 'flow' | 'profile'
@@ -346,6 +347,7 @@ const eventFlowSteps = [
 ] as const
 
 function eventStatusLabel(status: EventStatus) {
+  if (status === 'Returned') return 'Return report submitted'
   return status
 }
 
@@ -419,6 +421,10 @@ function App() {
   const [newInventoryUnit, setNewInventoryUnit] = useState('unit')
   const [inventoryFormError, setInventoryFormError] = useState('')
   const [inventoryQuantityError, setInventoryQuantityError] = useState('')
+  const [profileSettingsOpen, setProfileSettingsOpen] = useState(false)
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('')
+  const [newPasswordInput, setNewPasswordInput] = useState('')
+  const [settingsMessage, setSettingsMessage] = useState('')
   const [newEvent, setNewEvent] = useState<EventRecord>({
     recordId: '',
     id: 'EVT-2026-004',
@@ -735,6 +741,40 @@ function App() {
           : [...event.assignedEmployees, employeeName],
       }
     })
+  }
+
+  const toggleEventAssignedEmployee = (eventId: string, employeeName: string) => {
+    const targetEvent = events.find((event) => event.recordId === eventId)
+    const wasAssigned = targetEvent?.assignedEmployees.includes(employeeName) ?? false
+
+    setEvents((records) =>
+      records.map((event) => {
+        if (event.recordId !== eventId) {
+          return event
+        }
+        const isAssigned = event.assignedEmployees.includes(employeeName)
+        return {
+          ...event,
+          assignedEmployees: isAssigned
+            ? event.assignedEmployees.filter((name) => name !== employeeName)
+            : [...event.assignedEmployees, employeeName],
+        }
+      }),
+    )
+    if (targetEvent && !wasAssigned) {
+      setNotifications((records) => [
+        {
+          id: `note-${Date.now()}-reassign`,
+          staff: employeeName,
+          eventId: targetEvent.recordId,
+          title: `Assigned: ${targetEvent.title}`,
+          message: `${currentStaff.name} added you to the packing team for ${targetEvent.location}.`,
+          read: false,
+        },
+        ...records,
+      ])
+    }
+    addLog('Updated assigned staff', `${employeeName} assignment changed for ${targetEvent?.title ?? 'event'}.`)
   }
 
   const togglePackedItem = (eventId: string, itemId: string, packed: boolean) => {
@@ -1116,6 +1156,7 @@ function App() {
           returned: reservation.quantity,
           damaged: 0,
           missing: 0,
+          remarks: '',
         }
         return [reservation.itemId, line]
       }),
@@ -1146,6 +1187,17 @@ function App() {
   }
 
   const setReturnValue = (itemId: string, key: keyof ReturnLine, value: string) => {
+    if (key === 'remarks') {
+      setReturnLines((lines) => ({
+        ...lines,
+        [itemId]: {
+          ...(lines[itemId] ?? { returned: 0, damaged: 0, missing: 0, remarks: '' }),
+          remarks: value,
+        },
+      }))
+      return
+    }
+
     const nextQuantity = parseWholeNumber(value)
     if (nextQuantity === null) {
       setInventoryQuantityError('Return quantities must be whole numbers only. Decimals are not saved.')
@@ -1155,10 +1207,42 @@ function App() {
     setReturnLines((lines) => ({
       ...lines,
       [itemId]: {
-        ...(lines[itemId] ?? { returned: 0, damaged: 0, missing: 0 }),
+        ...(lines[itemId] ?? { returned: 0, damaged: 0, missing: 0, remarks: '' }),
         [key]: nextQuantity,
       },
     }))
+  }
+
+  const changeCurrentPassword = () => {
+    if (!authenticatedUser) {
+      return
+    }
+
+    const nextPassword = newPasswordInput.trim()
+    const passwordError = passwordValidationMessage(nextPassword)
+
+    if (currentPasswordInput.trim() !== authenticatedUser.password) {
+      setSettingsMessage('Current password is incorrect.')
+      return
+    }
+
+    if (passwordError) {
+      setSettingsMessage(passwordError)
+      return
+    }
+
+    setAccounts((records) =>
+      records.map((account) =>
+        account.name === authenticatedUser.name && account.portal === authenticatedUser.portal
+          ? { ...account, password: nextPassword }
+          : account,
+      ),
+    )
+    setAuthenticatedUser({ ...authenticatedUser, password: nextPassword })
+    setCurrentPasswordInput('')
+    setNewPasswordInput('')
+    setSettingsMessage('Password updated.')
+    addLog('Changed password', `${authenticatedUser.name} updated their password.`)
   }
 
   const closeEvent = () => {
@@ -1482,19 +1566,6 @@ function App() {
             <h1>Educational and robotics event inventory</h1>
           </div>
           <div className="top-actions">
-            <button
-              aria-label={`Switch to ${themeMode === 'dark' ? 'light' : 'dark'} mode`}
-              className="theme-toggle"
-              onClick={() => setThemeMode((mode) => (mode === 'dark' ? 'light' : 'dark'))}
-              type="button"
-            >
-              {themeMode === 'dark' ? (
-                <Sun size={17} aria-hidden="true" />
-              ) : (
-                <Moon size={17} aria-hidden="true" />
-              )}
-              {themeMode === 'dark' ? 'Light' : 'Dark'}
-            </button>
             <div className="notification-pill">
               <Bell size={16} aria-hidden="true" />
               {unreadNotificationCount > 0
@@ -1800,6 +1871,10 @@ function App() {
                     <ClipboardList size={18} aria-hidden="true" />
                     {portalMode === 'employee' ? 'My events' : 'All events'}
                   </button>
+                  <button type="button" onClick={() => setProfileSettingsOpen((open) => !open)}>
+                    <Wrench size={18} aria-hidden="true" />
+                    Settings
+                  </button>
                   <button type="button" onClick={handleLogout}>
                     <LogOut size={18} aria-hidden="true" />
                     Logout
@@ -1833,6 +1908,83 @@ function App() {
                   ))}
                 </div>
               </section>
+
+              {profileSettingsOpen && (
+                <section className="surface profile-panel settings-panel">
+                  <div className="section-heading">
+                    <div>
+                      <h2>Settings</h2>
+                      <p>Display and account settings for this login.</p>
+                    </div>
+                  </div>
+
+                  <div className="settings-list">
+                    <div className="settings-row">
+                      <div>
+                        <strong>Dark mode</strong>
+                        <span>Use a darker interface for low-light rooms.</span>
+                      </div>
+                      <button
+                        className="secondary-action"
+                        onClick={() => setThemeMode((mode) => (mode === 'dark' ? 'light' : 'dark'))}
+                        type="button"
+                      >
+                        {themeMode === 'dark' ? (
+                          <Sun size={17} aria-hidden="true" />
+                        ) : (
+                          <Moon size={17} aria-hidden="true" />
+                        )}
+                        {themeMode === 'dark' ? 'Light mode' : 'Dark mode'}
+                      </button>
+                    </div>
+
+                    <div className="settings-password">
+                      <div>
+                        <strong>Change password</strong>
+                        <span>Update the password for {currentStaff.name}.</span>
+                      </div>
+                      <label>
+                        Current password
+                        <input
+                          autoComplete="current-password"
+                          type="password"
+                          value={currentPasswordInput}
+                          onChange={(event) => {
+                            setCurrentPasswordInput(event.target.value)
+                            setSettingsMessage('')
+                          }}
+                        />
+                      </label>
+                      <label>
+                        New password
+                        <input
+                          autoComplete="new-password"
+                          minLength={4}
+                          type="password"
+                          value={newPasswordInput}
+                          onChange={(event) => {
+                            setNewPasswordInput(event.target.value)
+                            setSettingsMessage('')
+                          }}
+                        />
+                      </label>
+                      <button className="primary-action" onClick={changeCurrentPassword} type="button">
+                        <LockKeyhole size={17} aria-hidden="true" />
+                        Save password
+                      </button>
+                      {settingsMessage && (
+                        <p
+                          className={
+                            settingsMessage === 'Password updated.' ? 'inline-success' : 'form-error'
+                          }
+                        >
+                          {settingsMessage}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              )}
             </div>
           </section>
         )}
@@ -2161,29 +2313,49 @@ function App() {
                     </div>
                   </div>
                   {portalMode === 'employer' && selectedEventEditMode && (
-                    <label className="packing-add-item">
-                      Add item
-                      <select
-                        value=""
-                        onChange={(event) => addEventReservationItem(selectedEvent.recordId, event.target.value)}
-                      >
-                        <option value="" disabled>
-                          Select inventory item
-                        </option>
-                        {inventory
-                          .filter(
-                            (item) =>
-                              !selectedEvent.reservations.some(
-                                (reservation) => reservation.itemId === item.id,
-                              ),
-                          )
-                          .map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name}
-                            </option>
+                    <div className="packing-edit-panel">
+                      <div className="team-selector">
+                        <span>Assigned packing staff</span>
+                        <div className="team-options">
+                          {assignableStaff.length === 0 && (
+                            <p className="empty-state">Add employee accounts before assigning staff.</p>
+                          )}
+                          {assignableStaff.map((staff) => (
+                            <button
+                              className={selectedEvent.assignedEmployees.includes(staff.name) ? 'selected' : ''}
+                              key={staff.name}
+                              onClick={() => toggleEventAssignedEmployee(selectedEvent.recordId, staff.name)}
+                              type="button"
+                            >
+                              {staff.name}
+                            </button>
                           ))}
-                      </select>
-                    </label>
+                        </div>
+                      </div>
+                      <label className="packing-add-item">
+                        Add item
+                        <select
+                          value=""
+                          onChange={(event) => addEventReservationItem(selectedEvent.recordId, event.target.value)}
+                        >
+                          <option value="" disabled>
+                            Select inventory item
+                          </option>
+                          {inventory
+                            .filter(
+                              (item) =>
+                                !selectedEvent.reservations.some(
+                                  (reservation) => reservation.itemId === item.id,
+                                ),
+                            )
+                            .map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    </div>
                   )}
                   {inventoryQuantityError && selectedEventEditMode && (
                     <p className="form-error quantity-warning">{inventoryQuantityError}</p>
@@ -2198,7 +2370,10 @@ function App() {
                         <label className="packing-row" key={reservation.itemId}>
                           <input
                             checked={selectedEvent.packingProgress[reservation.itemId] ?? false}
-                            disabled={selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed'}
+                            disabled={
+                              portalMode !== 'employee' ||
+                              (selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed')
+                            }
                             type="checkbox"
                             onChange={(event) =>
                               togglePackedItem(selectedEvent.recordId, reservation.itemId, event.target.checked)
@@ -2262,20 +2437,26 @@ function App() {
                         Mark packed and ready
                       </button>
                     )}
-                    <button
-                      className="secondary-action"
-                      disabled={selectedEvent.status !== 'Packed'}
-                      onClick={() => checkoutEvent(selectedEvent.recordId)}
-                      type="button"
-                    >
-                      <Truck size={18} aria-hidden="true" />
-                      {portalMode === 'employee' ? 'Check out items' : 'Approve checkout'}
-                    </button>
+                    {portalMode === 'employer' && (
+                      <button
+                        className="secondary-action"
+                        disabled={selectedEvent.status !== 'Packed'}
+                        onClick={() => checkoutEvent(selectedEvent.recordId)}
+                        type="button"
+                      >
+                        <Truck size={18} aria-hidden="true" />
+                        Approve checkout
+                      </button>
+                    )}
                   </div>
                   <div className="action-row">
                     <button
                       className="secondary-action"
-                      disabled={selectedEvent.status !== 'Checked Out'}
+                      disabled={
+                        portalMode === 'employee'
+                          ? selectedEvent.status !== 'Checked Out'
+                          : selectedEvent.status !== 'Returned'
+                      }
                       onClick={() => setActiveTab('returns')}
                       type="button"
                     >
@@ -2295,6 +2476,9 @@ function App() {
                     )}
                   </div>
                   {checkoutMessage && <p className="inline-success">{checkoutMessage}</p>}
+                  {selectedEvent.returnReport && (
+                    <ReturnReportSummary event={selectedEvent} inventoryById={inventoryById} />
+                  )}
                   {portalMode === 'employer' && (
                     <button
                       className="delete-action"
@@ -2508,9 +2692,10 @@ function App() {
               <div className="table-header">
                 <span>Item</span>
                 <span>Checked out</span>
-                <span>Returned</span>
-                <span>Damaged</span>
-                <span>Missing</span>
+                <span>Returned quantity</span>
+                <span>Damaged quantity</span>
+                <span>Missing quantity</span>
+                <span>Remarks</span>
               </div>
               {selectedEvent.reservations.map((reservation) => {
                 const item = inventoryById[reservation.itemId]
@@ -2521,45 +2706,80 @@ function App() {
                   returned: selectedEvent.returnReport?.[item.id]?.returned ?? reservation.quantity,
                   damaged: selectedEvent.returnReport?.[item.id]?.damaged ?? 0,
                   missing: selectedEvent.returnReport?.[item.id]?.missing ?? 0,
+                  remarks: selectedEvent.returnReport?.[item.id]?.remarks ?? '',
                 }
+                const reportIsReadOnly = portalMode === 'employer'
 
                 return (
                   <div className="return-row" key={item.id}>
-                    <strong>{item.name}</strong>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <AssetIdPreview assetIds={reservation.selectedAssetIds} />
+                    </div>
                     <span>{reservation.quantity}</span>
-                    <input
-                      inputMode="numeric"
-                      min={0}
-                      pattern="[0-9]*"
-                      step={1}
-                      type="number"
-                      value={line.returned}
-                      onChange={(event) =>
-                        setReturnValue(item.id, 'returned', event.target.value)
-                      }
-                    />
-                    <input
-                      inputMode="numeric"
-                      min={0}
-                      pattern="[0-9]*"
-                      step={1}
-                      type="number"
-                      value={line.damaged}
-                      onChange={(event) =>
-                        setReturnValue(item.id, 'damaged', event.target.value)
-                      }
-                    />
-                    <input
-                      inputMode="numeric"
-                      min={0}
-                      pattern="[0-9]*"
-                      step={1}
-                      type="number"
-                      value={line.missing}
-                      onChange={(event) =>
-                        setReturnValue(item.id, 'missing', event.target.value)
-                      }
-                    />
+                    {reportIsReadOnly ? (
+                      <>
+                        <span>{line.returned}</span>
+                        <span>{line.damaged}</span>
+                        <span>{line.missing}</span>
+                        <span>{line.remarks || 'No remarks'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <label>
+                          Returned quantity
+                          <input
+                            inputMode="numeric"
+                            min={0}
+                            pattern="[0-9]*"
+                            step={1}
+                            type="number"
+                            value={line.returned}
+                            onChange={(event) =>
+                              setReturnValue(item.id, 'returned', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          Damaged quantity
+                          <input
+                            inputMode="numeric"
+                            min={0}
+                            pattern="[0-9]*"
+                            step={1}
+                            type="number"
+                            value={line.damaged}
+                            onChange={(event) =>
+                              setReturnValue(item.id, 'damaged', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          Missing quantity
+                          <input
+                            inputMode="numeric"
+                            min={0}
+                            pattern="[0-9]*"
+                            step={1}
+                            type="number"
+                            value={line.missing}
+                            onChange={(event) =>
+                              setReturnValue(item.id, 'missing', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          Remarks
+                          <input
+                            placeholder="e.g. Missing charger, cracked screen"
+                            value={line.remarks}
+                            onChange={(event) =>
+                              setReturnValue(item.id, 'remarks', event.target.value)
+                            }
+                          />
+                        </label>
+                      </>
+                    )}
                   </div>
                 )
               })}
@@ -2779,6 +2999,61 @@ function EventProgress({ status }: { status: EventStatus }) {
         </div>
       ))}
     </div>
+  )
+}
+
+function ReturnReportSummary({
+  event,
+  inventoryById,
+}: {
+  event: EventRecord
+  inventoryById: Record<string, InventoryItem>
+}) {
+  const reportLines = event.reservations
+    .map((reservation) => {
+      const item = inventoryById[reservation.itemId]
+      const report = event.returnReport?.[reservation.itemId]
+      return item && report ? { item, reservation, report } : null
+    })
+    .filter(Boolean) as Array<{
+      item: InventoryItem
+      reservation: Reservation
+      report: ReturnLine
+    }>
+
+  if (reportLines.length === 0) {
+    return null
+  }
+
+  const totalMissing = reportLines.reduce((total, line) => total + line.report.missing, 0)
+  const totalDamaged = reportLines.reduce((total, line) => total + line.report.damaged, 0)
+
+  return (
+    <section className="return-summary" aria-label="Submitted return report">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>Return report submitted</h2>
+          <p>
+            Employer review: {totalMissing} missing, {totalDamaged} damaged.
+          </p>
+        </div>
+        <Badge tone={totalMissing > 0 || totalDamaged > 0 ? 'warning' : 'success'}>
+          Ready for review
+        </Badge>
+      </div>
+      <div className="return-summary-list">
+        {reportLines.map(({ item, reservation, report }) => (
+          <div className="return-summary-row" key={item.id}>
+            <strong>{item.name}</strong>
+            <span>Checked out: {reservation.quantity}</span>
+            <span>Returned: {report.returned}</span>
+            <span>Damaged: {report.damaged}</span>
+            <span>Missing: {report.missing}</span>
+            <p>{report.remarks || 'No remarks'}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
