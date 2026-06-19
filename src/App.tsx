@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   BarChart3,
   Bell,
@@ -11,10 +11,12 @@ import {
   LockKeyhole,
   LogOut,
   Menu,
+  Moon,
   PackageCheck,
   Plus,
   Search,
   ShieldCheck,
+  Sun,
   Trash2,
   Truck,
   UserCog,
@@ -430,6 +432,7 @@ function App() {
   const [events, setEvents] = useStoredState('events', initialEvents)
   const [auditLogs, setAuditLogs] = useStoredState('auditLogs', initialAudit)
   const [notifications, setNotifications] = useStoredState('notifications', initialNotifications)
+  const [themeMode, setThemeMode] = useStoredState<'light' | 'dark'>('themeMode', 'light')
   const [currentStaff, setCurrentStaff] = useState<StaffUser>({
     name: '',
     role: 'Employer',
@@ -492,6 +495,19 @@ function App() {
         )
       : false
   const selectedEventEditMode = selectedEvent?.recordId === editingPackingEventId
+  const selectedEventPackingTotal = selectedEvent?.reservations.length ?? 0
+  const selectedEventPackedCount =
+    selectedEvent?.reservations.filter(
+      (reservation) => selectedEvent.packingProgress[reservation.itemId],
+    ).length ?? 0
+  const selectedEventPackingPercent =
+    selectedEventPackingTotal > 0
+      ? Math.round((selectedEventPackedCount / selectedEventPackingTotal) * 100)
+      : 0
+  const activeNavIndex = Math.max(
+    allowedNavItems.findIndex((item) => item.id === activeTab),
+    0,
+  )
   const staffNotifications = notifications.filter((notification) => notification.staff === currentStaff.name)
   const unreadNotificationCount = staffNotifications.filter((notification) => !notification.read).length
   const currentAccount = accounts.find((account) => account.name === currentStaff.name)
@@ -1221,7 +1237,7 @@ function App() {
 
   if (!authenticatedUser) {
     return (
-      <main className="login-shell">
+      <main className={`login-shell ${themeMode === 'dark' ? 'dark-mode' : ''}`}>
         <section className="login-panel liquid-enhanced">
           <LiquidGlassOverlay radius={30} />
           <div className="brand login-brand">
@@ -1418,7 +1434,7 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${themeMode === 'dark' ? 'dark-mode' : ''}`}>
       <aside className="sidebar liquid-enhanced" aria-label="Primary navigation">
         <LiquidGlassOverlay radius={28} />
         <div className="brand">
@@ -1447,7 +1463,13 @@ function App() {
 
         <nav
           className="nav-list"
-          style={{ gridTemplateColumns: `repeat(${allowedNavItems.length}, minmax(0, 1fr))` }}
+          style={
+            {
+              '--nav-count': allowedNavItems.length,
+              '--nav-index': activeNavIndex,
+              gridTemplateColumns: `repeat(${allowedNavItems.length}, minmax(0, 1fr))`,
+            } as CSSProperties
+          }
         >
           {allowedNavItems.map((item) => {
             const Icon = item.icon
@@ -1486,6 +1508,19 @@ function App() {
             <h1>Educational and robotics event inventory</h1>
           </div>
           <div className="top-actions">
+            <button
+              aria-label={`Switch to ${themeMode === 'dark' ? 'light' : 'dark'} mode`}
+              className="theme-toggle"
+              onClick={() => setThemeMode((mode) => (mode === 'dark' ? 'light' : 'dark'))}
+              type="button"
+            >
+              {themeMode === 'dark' ? (
+                <Sun size={17} aria-hidden="true" />
+              ) : (
+                <Moon size={17} aria-hidden="true" />
+              )}
+              {themeMode === 'dark' ? 'Light' : 'Dark'}
+            </button>
             <div className="notification-pill">
               <Bell size={16} aria-hidden="true" />
               {unreadNotificationCount > 0
@@ -1503,6 +1538,7 @@ function App() {
           </div>
         </header>
 
+        <div className="page-transition" key={activeTab}>
         {activeTab === 'dashboard' && (
           <section className="panel-stack">
             <div className="metric-grid">
@@ -2146,6 +2182,20 @@ function App() {
                 <>
                   <EventProgress status={selectedEvent.status} />
                   <TeamChips employees={selectedEvent.assignedEmployees} />
+                  <div
+                    className="packing-progress"
+                    aria-label={`${selectedEventPackedCount} of ${selectedEventPackingTotal} packing items checked`}
+                  >
+                    <div>
+                      <strong>Packing progress</strong>
+                      <span>
+                        {selectedEventPackedCount} of {selectedEventPackingTotal} checked
+                      </span>
+                    </div>
+                    <div className="packing-progress-track">
+                      <span style={{ width: `${selectedEventPackingPercent}%` }} />
+                    </div>
+                  </div>
                   {portalMode === 'employer' && selectedEventEditMode && (
                     <label className="packing-add-item">
                       Add item
@@ -2658,6 +2708,7 @@ function App() {
             </div>
           </section>
         )}
+        </div>
       </section>
     </main>
   )

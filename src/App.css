@@ -250,6 +250,23 @@
 .nav-list {
   display: grid;
   gap: 7px;
+  position: relative;
+  isolation: isolate;
+}
+
+.nav-list::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc((100% / var(--nav-count, 1)) * var(--nav-index, 0));
+  width: calc(100% / var(--nav-count, 1));
+  border-radius: 20px;
+  background: rgba(0, 122, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(0, 122, 255, 0.12), 0 12px 28px rgba(0, 122, 255, 0.12);
+  transform: scale(0.94);
+  transition: left 260ms cubic-bezier(0.2, 0.8, 0.2, 1), width 260ms ease, transform 180ms ease;
+  z-index: -1;
 }
 
 .role-card {
@@ -311,6 +328,8 @@ button {
 }
 
 .nav-list button {
+  position: relative;
+  z-index: 1;
   justify-content: flex-start;
   padding: 0 12px;
   color: #3a3a3c;
@@ -490,6 +509,23 @@ label {
 .panel-stack {
   display: grid;
   gap: 18px;
+}
+
+.page-transition {
+  animation: page-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.992);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .surface,
@@ -956,6 +992,52 @@ label {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 16px;
+}
+
+.packing-progress {
+  display: grid;
+  gap: 9px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow: 0 12px 30px rgba(85, 113, 132, 0.08);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+.packing-progress > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.packing-progress strong {
+  color: #111827;
+  font-size: 0.92rem;
+}
+
+.packing-progress span {
+  color: #6b7280;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.packing-progress-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(0, 122, 255, 0.12);
+}
+
+.packing-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #007aff, #5e5ce6);
+  transition: width 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .progress-step {
@@ -2628,6 +2710,183 @@ button:active {
   transform: scale(0.98);
 }
 
+button:not(:disabled),
+.event-card,
+.quick-actions button,
+.profile-actions button,
+.packing-row,
+.inventory-row,
+.return-row,
+.surface,
+.metric-card {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled):active,
+.event-card:active,
+.quick-actions button:active,
+.profile-actions button:active,
+.packing-row:active,
+.inventory-row:active,
+.return-row:active {
+  transform: scale(0.985);
+  transition-duration: 90ms;
+}
+
+.theme-toggle {
+  min-width: 86px;
+}
+
+.dark-mode.app-shell,
+.dark-mode.login-shell {
+  color: #f8fafc;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(0, 122, 255, 0.24), transparent 30%),
+    radial-gradient(circle at 88% 14%, rgba(94, 92, 230, 0.22), transparent 28%),
+    radial-gradient(circle at 76% 88%, rgba(52, 199, 89, 0.12), transparent 28%),
+    #090d16;
+}
+
+.dark-mode.app-shell::before,
+.dark-mode.login-shell::before {
+  background: rgba(0, 122, 255, 0.2);
+}
+
+.dark-mode.app-shell::after,
+.dark-mode.login-shell::after {
+  background: rgba(94, 92, 230, 0.2);
+}
+
+.dark-mode .surface,
+.dark-mode .metric-card,
+.dark-mode .login-panel,
+.dark-mode .topbar,
+.dark-mode .sidebar,
+.dark-mode .role-card,
+.dark-mode .staff-switcher,
+.dark-mode .event-card,
+.dark-mode .allocation-row,
+.dark-mode .inventory-row,
+.dark-mode .return-row,
+.dark-mode .packing-row,
+.dark-mode .audit-row,
+.dark-mode .flow-lane,
+.dark-mode .flow-step,
+.dark-mode .notification-row,
+.dark-mode .profile-detail-list div,
+.dark-mode .profile-activity-row,
+.dark-mode .profile-stats div,
+.dark-mode .quick-actions button,
+.dark-mode .profile-actions button,
+.dark-mode .add-inventory-panel,
+.dark-mode .progress-step,
+.dark-mode .packing-progress,
+.dark-mode .user-row {
+  border-color: rgba(148, 163, 184, 0.26);
+  background: rgba(15, 23, 42, 0.62);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.26);
+}
+
+.dark-mode .liquid-overlay::before {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.12), transparent 34%),
+    radial-gradient(circle at 95% 12%, rgba(0, 122, 255, 0.22), transparent 32%),
+    rgba(15, 23, 42, 0.2);
+}
+
+.dark-mode .topbar h1,
+.dark-mode .login-panel h1,
+.dark-mode .section-heading h2,
+.dark-mode .metric-card strong,
+.dark-mode .event-card strong,
+.dark-mode .shortage-row strong,
+.dark-mode .audit-row strong,
+.dark-mode .packing-row strong,
+.dark-mode .item-cell strong,
+.dark-mode .profile-hero h2,
+.dark-mode .profile-stats strong,
+.dark-mode .profile-detail-list dd,
+.dark-mode .user-row strong,
+.dark-mode .flow-lane h3,
+.dark-mode .flow-step strong,
+.dark-mode .availability strong,
+.dark-mode .staff-switcher p,
+.dark-mode .packing-progress strong,
+.dark-mode label {
+  color: #f8fafc;
+}
+
+.dark-mode .metric-card span,
+.dark-mode .metric-card p,
+.dark-mode .section-heading p,
+.dark-mode .event-card span,
+.dark-mode .event-card p,
+.dark-mode .packing-row span,
+.dark-mode .audit-row span,
+.dark-mode .shortage-row span,
+.dark-mode .usage-row,
+.dark-mode .item-cell span,
+.dark-mode .login-copy,
+.dark-mode .profile-hero p,
+.dark-mode .profile-stats span,
+.dark-mode .profile-activity-row span,
+.dark-mode .profile-activity-row time,
+.dark-mode .profile-detail-list dt,
+.dark-mode .user-row span,
+.dark-mode .notification-row span,
+.dark-mode .asset-id-summary,
+.dark-mode .packing-progress span {
+  color: #aab6c7;
+}
+
+.dark-mode input,
+.dark-mode select {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(2, 6, 23, 0.46);
+  color: #f8fafc;
+}
+
+.dark-mode input::placeholder {
+  color: #7f8da3;
+}
+
+.dark-mode .nav-list::before {
+  background: rgba(0, 122, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(125, 181, 255, 0.24), 0 12px 30px rgba(0, 0, 0, 0.22);
+}
+
+.dark-mode .nav-list button {
+  color: #cbd5e1;
+}
+
+.dark-mode .nav-list button:hover,
+.dark-mode .nav-list button.active {
+  color: #ffffff;
+  background: rgba(0, 122, 255, 0.32);
+}
+
+.dark-mode .secondary-action,
+.dark-mode .icon-action,
+.dark-mode .logout-button {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.48);
+  color: #dce8f7;
+}
+
+.dark-mode .packing-progress-track {
+  background: rgba(125, 181, 255, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}
+
 @media (max-width: 760px) {
   .nav-list button.active {
     background: #007aff;
@@ -3133,4 +3392,56 @@ button:active {
   .quick-actions {
     grid-template-columns: 1fr;
   }
+}
+
+.dark-mode .surface,
+.dark-mode .metric-card,
+.dark-mode .login-panel,
+.dark-mode .topbar,
+.dark-mode .sidebar,
+.dark-mode .event-card,
+.dark-mode .allocation-row,
+.dark-mode .inventory-row,
+.dark-mode .return-row,
+.dark-mode .packing-row,
+.dark-mode .audit-row,
+.dark-mode .notification-row,
+.dark-mode .profile-detail-list div,
+.dark-mode .profile-activity-row,
+.dark-mode .profile-stats div,
+.dark-mode .quick-actions button,
+.dark-mode .profile-actions button,
+.dark-mode .progress-step,
+.dark-mode .packing-progress,
+.dark-mode .user-row {
+  border-color: rgba(148, 163, 184, 0.28);
+  background-color: rgba(15, 23, 42, 0.64);
+}
+
+.dark-mode .topbar h1,
+.dark-mode .section-heading h2,
+.dark-mode .login-panel h1,
+.dark-mode .metric-card strong,
+.dark-mode .event-card strong,
+.dark-mode .packing-row strong,
+.dark-mode .item-cell strong,
+.dark-mode .profile-hero h2,
+.dark-mode .profile-stats strong,
+.dark-mode .profile-detail-list dd,
+.dark-mode .user-row strong,
+.dark-mode label {
+  color: #f8fafc;
+}
+
+.dark-mode .section-heading p,
+.dark-mode .metric-card span,
+.dark-mode .metric-card p,
+.dark-mode .event-card span,
+.dark-mode .event-card p,
+.dark-mode .packing-row span,
+.dark-mode .item-cell span,
+.dark-mode .asset-id-summary,
+.dark-mode .profile-stats span,
+.dark-mode .profile-detail-list dt {
+  color: #aab6c7;
 }
