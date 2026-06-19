@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
+  ArrowLeft,
   BarChart3,
   Bell,
   Building2,
@@ -1934,11 +1935,13 @@ function App() {
                       <p>Display and account settings for this login.</p>
                     </div>
                     <button
+                      aria-label="Back to profile"
                       className="icon-action"
                       onClick={() => setProfileSettingsOpen(false)}
+                      title="Back to profile"
                       type="button"
                     >
-                      Back
+                      <ArrowLeft size={18} aria-hidden="true" />
                     </button>
                   </div>
 
@@ -2286,7 +2289,7 @@ function App() {
             </div>
 
             <div className="wizard-actions">
-              <button className="secondary-action" disabled={plannerStep === 1} onClick={() => setPlannerStep((plannerStep - 1) as 1 | 2 | 3 | 4)} type="button">Back</button>
+              <button aria-label="Previous step" className="icon-action wizard-back" disabled={plannerStep === 1} onClick={() => setPlannerStep((plannerStep - 1) as 1 | 2 | 3 | 4)} title="Previous step" type="button"><ArrowLeft size={19} aria-hidden="true" /></button>
               {plannerStep < 4 ? (
                 <button className="primary-action" disabled={!plannerStepValid} onClick={() => setPlannerStep((plannerStep + 1) as 1 | 2 | 3 | 4)} type="button">Continue</button>
               ) : (
@@ -2373,7 +2376,7 @@ function App() {
             {eventDetailOpen && (
             <section className="surface event-detail-page">
               <div className="section-heading">
-                <button className="back-link" onClick={() => setEventDetailOpen(false)} type="button">Back to events</button>
+                <button aria-label="Back to events" className="icon-action back-link" onClick={() => setEventDetailOpen(false)} title="Back to events" type="button"><ArrowLeft size={19} aria-hidden="true" /></button>
                 <div>
                   <h2>{portalMode === 'employee' ? 'My task' : 'Packing list'}</h2>
                   <p>{selectedEvent ? selectedEvent.title : 'Select an event'}</p>
@@ -2733,24 +2736,13 @@ function App() {
                     <div>
                       <strong>{item.name}</strong>
                       <span>{item.category}</span>
-                      <AssetIdPreview assetIds={item.assetIds} />
-                      <details className="asset-id-editor">
-                        <summary>Edit item IDs</summary>
-                        <div>
-                          {item.assetIds.map((assetId, assetIndex) => (
-                            <label key={assetIndex}>
-                              {item.name} {assetIndex + 1}
-                              <input
-                                aria-label={item.name + ' item ID ' + (assetIndex + 1)}
-                                value={assetId}
-                                onChange={(event) =>
-                                  updateInventoryAssetId(item.id, assetIndex, event.target.value)
-                                }
-                              />
-                            </label>
-                          ))}
-                        </div>
-                      </details>
+                      <AssetIdPreview
+                        assetIds={item.assetIds}
+                        itemName={item.name}
+                        onAssetIdChange={(assetIndex, value) =>
+                          updateInventoryAssetId(item.id, assetIndex, value)
+                        }
+                      />
                     </div>
                   </div>
                   <div className="stock-editor">
@@ -3161,7 +3153,15 @@ function ReturnReportSummary({
   )
 }
 
-function AssetIdPreview({ assetIds }: { assetIds: string[] }) {
+function AssetIdPreview({
+  assetIds,
+  itemName,
+  onAssetIdChange,
+}: {
+  assetIds: string[]
+  itemName?: string
+  onAssetIdChange?: (assetIndex: number, value: string) => void
+}) {
   if (assetIds.length === 0) {
     return <span className="asset-id-summary">IDs assigned after confirmation</span>
   }
@@ -3169,8 +3169,21 @@ function AssetIdPreview({ assetIds }: { assetIds: string[] }) {
   return (
     <details className="asset-preview">
       <summary>{assetIds.length === 1 ? assetIds[0] : 'View ' + assetIds.length + ' item IDs'}</summary>
-      <div>
-        {assetIds.map((assetId) => <span key={assetId}>{assetId}</span>)}
+      <div className={onAssetIdChange ? 'asset-preview-edit-grid' : ''}>
+        {assetIds.map((assetId, assetIndex) =>
+          onAssetIdChange ? (
+            <label key={assetIndex}>
+              <span>{itemName || 'Item'} {assetIndex + 1}</span>
+              <input
+                aria-label={(itemName || 'Item') + ' ID ' + (assetIndex + 1)}
+                value={assetId}
+                onChange={(event) => onAssetIdChange(assetIndex, event.target.value)}
+              />
+            </label>
+          ) : (
+            <span key={assetId}>{assetId}</span>
+          ),
+        )}
       </div>
     </details>
   )
