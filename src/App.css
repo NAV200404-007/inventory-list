@@ -4410,3 +4410,44 @@ button:not(:disabled):active,
     grid-column: auto;
   }
 }
+
+
+.asset-check-row.employee-view {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.packing-row .asset-check-row.employee-view > input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  margin: 0;
+}
+
+.packing-row .asset-check-row.employee-view .asset-id-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.asset-check-row.employee-view .badge {
+  grid-column: auto;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .asset-check-row.employee-view {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: 7px;
+  }
+
+  .packing-row .asset-check-row.employee-view .asset-id-input {
+    padding-inline: 8px;
+    font-size: 0.8rem;
+  }
+}
