@@ -4232,3 +4232,69 @@ button:not(:disabled):active,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+.asset-id-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.asset-id-field.damaged {
+  border-color: rgba(255, 149, 0, 0.45);
+  background: rgba(255, 149, 0, 0.08);
+}
+
+.asset-id-field.missing {
+  border-color: rgba(255, 59, 48, 0.45);
+  background: rgba(255, 59, 48, 0.08);
+}
+
+.asset-condition {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.asset-condition .badge {
+  min-height: 21px;
+  padding: 0 6px;
+  font-size: 0.62rem;
+}
+
+.asset-condition small {
+  overflow: hidden;
+  color: #6b7280;
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-condition button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #eaf7ee;
+  color: #248a3d;
+}
+
+.dark-mode .asset-id-field.damaged {
+  background: rgba(255, 149, 0, 0.12);
+}
+
+.dark-mode .asset-id-field.missing {
+  background: rgba(255, 59, 48, 0.12);
+}
+
+.dark-mode .asset-condition small {
+  color: #c7d2e3;
+}

@@ -36,6 +36,14 @@ type EventStatus = 'Draft' | 'Reserved' | 'Packed' | 'Checked Out' | 'Returned' 
 type Role = 'Employer' | 'Inventory Manager' | 'Employee'
 type PortalMode = 'employer' | 'employee'
 
+type AssetCondition = {
+  status: 'Damaged' | 'Missing'
+  remarks: string
+  eventId: string
+  eventTitle: string
+  reportedBy: string
+}
+
 type InventoryItem = {
   id: string
   name: string
@@ -46,6 +54,7 @@ type InventoryItem = {
   location: string
   unit: string
   assetIds: string[]
+  assetConditions?: Record<string, AssetCondition>
 }
 
 type Reservation = {
@@ -742,7 +751,7 @@ function App() {
       .toUpperCase() || 'U'
 
   const filteredInventory = inventory.filter((item) => {
-    const matchesSearch = `${item.name} ${item.category} ${item.location}`
+    const matchesSearch = `${item.name} ${item.category} ${item.location} ${item.assetIds.join(' ')} ${Object.keys(item.assetConditions ?? {}).join(' ')}`
       .toLowerCase()
       .includes(inventorySearch.toLowerCase())
     const reserved = reservedQuantity(item.id, '2026-06-02', '2026-12-31')
@@ -894,10 +903,35 @@ function App() {
       items.map((item) => {
         if (item.id !== itemId) return item
         const assetIds = [...item.assetIds]
+        const previousId = assetIds[assetIndex]
         assetIds[assetIndex] = nextId
-        return { ...item, assetIds }
+        const assetConditions = { ...(item.assetConditions ?? {}) }
+        if (previousId && previousId !== nextId && assetConditions[previousId]) {
+          assetConditions[nextId] = assetConditions[previousId]
+          delete assetConditions[previousId]
+        }
+        return { ...item, assetIds, assetConditions }
       }),
     )
+  }
+
+  const resolveAssetIssue = (itemId: string, assetId: string) => {
+    setInventory((items) =>
+      items.map((item) => {
+        if (item.id !== itemId) return item
+        const assetConditions = { ...(item.assetConditions ?? {}) }
+        const resolved = assetConditions[assetId]
+        if (!resolved) return item
+        delete assetConditions[assetId]
+        return {
+          ...item,
+          assetConditions,
+          damaged: Math.max(0, item.damaged - (resolved.status === 'Damaged' ? 1 : 0)),
+          missing: Math.max(0, item.missing - (resolved.status === 'Missing' ? 1 : 0)),
+        }
+      }),
+    )
+    addLog('Resolved asset issue', assetId + ' was marked available again.')
   }
 
   const updateEventSchedule = (
@@ -1454,14 +1488,47 @@ function App() {
     setInventory((items) =>
       items.map((item) => {
         const line = selectedEvent.returnReport?.[item.id]
-        if (!line) {
-          return item
+        const reservation = selectedEvent.reservations.find((entry) => entry.itemId === item.id)
+        if (!line || !reservation) return item
+        if (!selectedEvent.assetReturnReport) {
+          return {
+            ...item,
+            damaged: item.damaged + line.damaged,
+            missing: item.missing + line.missing,
+          }
         }
+
+        const existingConditions = item.assetConditions ?? {}
+        const unidentifiedDamaged = Math.max(
+          0,
+          item.damaged - Object.values(existingConditions).filter((condition) => condition.status === 'Damaged').length,
+        )
+        const unidentifiedMissing = Math.max(
+          0,
+          item.missing - Object.values(existingConditions).filter((condition) => condition.status === 'Missing').length,
+        )
+        const assetConditions = { ...existingConditions }
+
+        reservation.selectedAssetIds.forEach((assetId) => {
+          const result = selectedEvent.assetReturnReport?.[assetId]
+          if (!result || result.status === 'Returned') {
+            delete assetConditions[assetId]
+            return
+          }
+          assetConditions[assetId] = {
+            status: result.status,
+            remarks: result.remarks,
+            eventId: selectedEvent.id,
+            eventTitle: selectedEvent.title,
+            reportedBy: selectedEvent.returnReportBy ?? 'Unknown',
+          }
+        })
 
         return {
           ...item,
-          damaged: item.damaged + line.damaged,
-          missing: item.missing + line.missing,
+          assetConditions,
+          damaged: unidentifiedDamaged + Object.values(assetConditions).filter((condition) => condition.status === 'Damaged').length,
+          missing: unidentifiedMissing + Object.values(assetConditions).filter((condition) => condition.status === 'Missing').length,
         }
       }),
     )
@@ -2792,7 +2859,9 @@ function App() {
                   <div className="inventory-asset-container">
                     <AssetIdPreview
                       assetIds={item.assetIds}
+                      assetConditions={item.assetConditions}
                       itemName={item.name}
+                      onResolveIssue={(assetId) => resolveAssetIssue(item.id, assetId)}
                       onAssetIdChange={(assetIndex, value) =>
                         updateInventoryAssetId(item.id, assetIndex, value)
                       }
@@ -3156,36 +3225,44 @@ function ReturnReportSummary({
 }
 
 function AssetIdPreview({
+  assetConditions,
   assetIds,
   itemName,
   onAssetIdChange,
+  onResolveIssue,
 }: {
+  assetConditions?: Record<string, AssetCondition>
   assetIds: string[]
   itemName?: string
   onAssetIdChange?: (assetIndex: number, value: string) => void
+  onResolveIssue?: (assetId: string) => void
 }) {
-  if (assetIds.length === 0) {
-    return <span className="asset-id-summary">IDs assigned after confirmation</span>
-  }
+  if (assetIds.length === 0) return <span className="asset-id-summary">IDs assigned after confirmation</span>
 
   if (onAssetIdChange) {
+    const issueCount = Object.keys(assetConditions ?? {}).length
     return (
       <div className="asset-preview asset-preview-inline">
         <div className="asset-preview-heading">
           <strong>Item IDs</strong>
-          <span>{assetIds.length} items</span>
+          <span>{assetIds.length} items{issueCount ? ' � ' + issueCount + ' issues' : ''}</span>
         </div>
         <div className="asset-preview-edit-grid">
-          {assetIds.map((assetId, assetIndex) => (
-            <label key={assetIndex}>
-              <span className="sr-only">{itemName || 'Item'} {assetIndex + 1}</span>
-              <input
-                aria-label={(itemName || 'Item') + ' ID ' + (assetIndex + 1)}
-                value={assetId}
-                onChange={(event) => onAssetIdChange(assetIndex, event.target.value)}
-              />
-            </label>
-          ))}
+          {assetIds.map((assetId, assetIndex) => {
+            const condition = assetConditions?.[assetId]
+            return (
+              <div className={'asset-id-field ' + (condition ? condition.status.toLowerCase() : '')} key={assetIndex}>
+                <input aria-label={(itemName || 'Item') + ' ID ' + (assetIndex + 1)} value={assetId} onChange={(event) => onAssetIdChange(assetIndex, event.target.value)} />
+                {condition && (
+                  <div className="asset-condition">
+                    <Badge tone={condition.status === 'Missing' ? 'danger' : 'warning'}>{condition.status}</Badge>
+                    <small title={condition.eventTitle + ' � reported by ' + condition.reportedBy}>{condition.remarks || condition.eventId}</small>
+                    {onResolveIssue && <button aria-label={'Mark ' + assetId + ' resolved'} onClick={() => onResolveIssue(assetId)} title="Mark resolved" type="button"><CheckCircle2 size={14} aria-hidden="true" /></button>}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
     )
@@ -3194,9 +3271,7 @@ function AssetIdPreview({
   return (
     <details className="asset-preview">
       <summary>{assetIds.length === 1 ? assetIds[0] : 'View ' + assetIds.length + ' item IDs'}</summary>
-      <div>
-        {assetIds.map((assetId) => <span key={assetId}>{assetId}</span>)}
-      </div>
+      <div>{assetIds.map((assetId) => <span key={assetId}>{assetId}</span>)}</div>
     </details>
   )
 }
