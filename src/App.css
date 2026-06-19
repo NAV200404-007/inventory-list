@@ -3879,3 +3879,229 @@ button:not(:disabled):active,
 .dark-mode .team-chips span {
   color: #eaf4ff !important;
 }
+
+
+/* Asset-level event tracking */
+.event-schedule {
+  margin: -4px 0 12px;
+  color: #6b7280;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.event-time-editor {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.asset-packing-group {
+  display: block;
+}
+
+.packing-item-heading,
+.asset-return-heading,
+.return-trace {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.packing-item-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.asset-checklist,
+.asset-return-list,
+.asset-return-group,
+.asset-id-editor > div {
+  display: grid;
+  gap: 8px;
+}
+
+.asset-checklist {
+  margin-top: 12px;
+}
+
+.asset-check-row {
+  display: grid;
+  grid-template-columns: 24px minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: rgba(247, 249, 252, 0.82);
+}
+
+.asset-id-input {
+  width: 100%;
+  min-width: 0;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.asset-id-editor {
+  margin-top: 8px;
+}
+
+.asset-id-editor summary {
+  cursor: pointer;
+  color: #007aff;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.asset-id-editor > div {
+  margin-top: 9px;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+}
+
+.asset-id-editor label {
+  min-width: 0;
+  font-size: 0.76rem;
+}
+
+.asset-id-editor input {
+  width: 100%;
+  min-width: 0;
+}
+
+.return-trace {
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #dbe5f2;
+  border-radius: 14px;
+  background: #f3f7fc;
+}
+
+.return-trace strong {
+  flex-basis: 100%;
+}
+
+.return-trace span {
+  color: #6b7280;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.asset-return-group {
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.asset-return-heading span {
+  color: #6b7280;
+  font-size: 0.82rem;
+}
+
+.asset-return-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(150px, 0.8fr) minmax(190px, 1.5fr);
+  align-items: end;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.asset-return-row label {
+  min-width: 0;
+}
+
+.asset-return-row input,
+.asset-return-row select {
+  width: 100%;
+  min-width: 0;
+}
+
+.dark-mode .event-schedule,
+.dark-mode .return-trace span,
+.dark-mode .asset-return-heading span {
+  color: #c7d2e3;
+}
+
+.dark-mode .asset-check-row,
+.dark-mode .asset-return-group,
+.dark-mode .return-trace {
+  color: #f8fafc;
+  border-color: rgba(148, 163, 184, 0.34);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.dark-mode .asset-check-row strong,
+.dark-mode .asset-return-row strong,
+.dark-mode .asset-return-heading strong,
+.dark-mode .return-trace strong,
+.dark-mode .asset-id-editor summary {
+  color: #f8fafc;
+}
+
+@media (max-width: 760px) {
+  .event-time-editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .packing-item-heading,
+  .asset-return-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .asset-check-row {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .asset-check-row .badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .asset-return-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
+
+
+.asset-summary-items {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.asset-summary-items > span {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto minmax(120px, 2fr);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.asset-summary-items small {
+  color: #6b7280;
+}
+
+.dark-mode .asset-summary-items > span {
+  border-color: rgba(148, 163, 184, 0.34);
+}
+
+.dark-mode .asset-summary-items small {
+  color: #c7d2e3;
+}
+
+@media (max-width: 560px) {
+  .asset-summary-items > span {
+    grid-template-columns: 1fr auto;
+  }
+
+  .asset-summary-items small {
+    grid-column: 1 / -1;
+  }
+}

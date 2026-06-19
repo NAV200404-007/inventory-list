@@ -53,6 +53,13 @@ type Reservation = {
   selectedAssetIds: string[]
 }
 
+type AssetReturnStatus = 'Returned' | 'Missing' | 'Damaged'
+
+type AssetReturnLine = {
+  status: AssetReturnStatus
+  remarks: string
+}
+
 type EventRecord = {
   recordId: string
   id: string
@@ -60,13 +67,20 @@ type EventRecord = {
   type: string
   location: string
   start: string
+  startTime: string
   end: string
+  endTime: string
   staff?: string
   assignedEmployees: string[]
   status: EventStatus
   reservations: Reservation[]
   packingProgress: Record<string, boolean>
+  packedAssetIds: Record<string, boolean>
+  packedBy?: string
+  checkedOutBy?: string
   returnReport?: Record<string, ReturnLine>
+  assetReturnReport?: Record<string, AssetReturnLine>
+  returnReportBy?: string
 }
 
 type NotificationRecord = {
@@ -143,7 +157,10 @@ function normalizeEventRecord(event: EventRecord & { staff?: string; recordId?: 
     ...event,
     recordId: event.recordId ?? createEventRecordId(),
     assignedEmployees,
+    startTime: event.startTime ?? '09:00',
+    endTime: event.endTime ?? '17:00',
     packingProgress: event.packingProgress ?? {},
+    packedAssetIds: event.packedAssetIds ?? {},
     status: normalizeEventStatus(event.status),
   }
 }
@@ -333,6 +350,10 @@ function formatDate(date: string) {
   }).format(new Date(`${date}T00:00:00`))
 }
 
+function formatEventSchedule(event: Pick<EventRecord, 'start' | 'startTime' | 'end' | 'endTime'>) {
+  return formatDate(event.start) + ', ' + event.startTime + ' to ' + formatDate(event.end) + ', ' + event.endTime
+}
+
 function getUsable(item: InventoryItem) {
   return Math.max(0, item.total - item.damaged - item.missing)
 }
@@ -356,6 +377,22 @@ function eventStatusTone(status: EventStatus) {
   if (status === 'Packed') return 'success'
   if (status === 'Checked Out' || status === 'Returned') return 'warning'
   return 'info'
+}
+
+function assetJourneyStatus(event: EventRecord, assetId: string) {
+  const returnedStatus = event.assetReturnReport?.[assetId]?.status
+  if (returnedStatus) return returnedStatus
+  if (event.status === 'Checked Out') return 'Checked out'
+  if (event.packedAssetIds[assetId]) return 'Packed'
+  return 'Assigned'
+}
+
+function assetJourneyTone(status: string) {
+  if (status === 'Returned' || status === 'Packed') return 'success'
+  if (status === 'Damaged') return 'warning'
+  if (status === 'Missing') return 'danger'
+  if (status === 'Checked out') return 'info'
+  return 'neutral'
 }
 
 function eventStepIndex(status: EventStatus) {
@@ -432,13 +469,16 @@ function App() {
     type: 'VEX IQ workshop',
     location: 'Training Lab 1',
     start: '2026-06-24',
+    startTime: '09:00',
     end: '2026-06-26',
+    endTime: '17:00',
     assignedEmployees: [],
     status: 'Draft',
     reservations: templates['VEX IQ workshop'],
     packingProgress: {},
+    packedAssetIds: {},
   })
-  const [returnLines, setReturnLines] = useState<Record<string, ReturnLine>>({})
+  const [assetReturnLines, setAssetReturnLines] = useState<Record<string, AssetReturnLine>>({})
   const [checkoutMessage, setCheckoutMessage] = useState('')
   const [userManagementMessage, setUserManagementMessage] = useState('')
   const [editingPackingEventId, setEditingPackingEventId] = useState('')
@@ -463,19 +503,19 @@ function App() {
     visibleEvents.find(
       (event) => event.recordId === selectedEventId || event.id === selectedEventId,
     ) ?? visibleEvents[0]
+  const selectedEventAssets =
+    selectedEvent?.reservations.flatMap((reservation) =>
+      reservation.selectedAssetIds.length > 0
+        ? reservation.selectedAssetIds
+        : [reservation.itemId + ':untracked'],
+    ) ?? []
   const selectedEventAllPacked =
-    selectedEvent
-      ? selectedEvent.reservations.length > 0 &&
-        selectedEvent.reservations.every(
-          (reservation) => selectedEvent.packingProgress[reservation.itemId],
-        )
-      : false
+    selectedEventAssets.length > 0 &&
+    selectedEventAssets.every((assetId) => selectedEvent?.packedAssetIds[assetId])
   const selectedEventEditMode = selectedEvent?.recordId === editingPackingEventId
-  const selectedEventPackingTotal = selectedEvent?.reservations.length ?? 0
+  const selectedEventPackingTotal = selectedEventAssets.length
   const selectedEventPackedCount =
-    selectedEvent?.reservations.filter(
-      (reservation) => selectedEvent.packingProgress[reservation.itemId],
-    ).length ?? 0
+    selectedEventAssets.filter((assetId) => selectedEvent?.packedAssetIds[assetId]).length
   const selectedEventPackingPercent =
     selectedEventPackingTotal > 0
       ? Math.round((selectedEventPackedCount / selectedEventPackingTotal) * 100)
@@ -780,18 +820,78 @@ function App() {
     addLog('Updated assigned staff', `${employeeName} assignment changed for ${targetEvent?.title ?? 'event'}.`)
   }
 
-  const togglePackedItem = (eventId: string, itemId: string, packed: boolean) => {
+  const togglePackedAsset = (eventId: string, itemId: string, assetId: string, packed: boolean) => {
+    setEvents((records) =>
+      records.map((record) => {
+        if (record.recordId !== eventId) return record
+        const reservation = record.reservations.find((entry) => entry.itemId === itemId)
+        const assetKeys = reservation?.selectedAssetIds.length
+          ? reservation.selectedAssetIds
+          : [itemId + ':untracked']
+        const packedAssetIds = { ...record.packedAssetIds, [assetId]: packed }
+        return {
+          ...record,
+          packedAssetIds,
+          packingProgress: {
+            ...record.packingProgress,
+            [itemId]: assetKeys.every((key) => packedAssetIds[key]),
+          },
+        }
+      }),
+    )
+  }
+
+  const updateAssignedAssetId = (
+    eventId: string,
+    itemId: string,
+    assetIndex: number,
+    value: string,
+  ) => {
+    const nextId = value.toUpperCase()
+    setEvents((records) =>
+      records.map((record) => {
+        if (record.recordId !== eventId) return record
+        const target = record.reservations.find((reservation) => reservation.itemId === itemId)
+        const previousId = target?.selectedAssetIds[assetIndex]
+        const packedAssetIds = { ...record.packedAssetIds }
+        if (previousId && previousId !== nextId) {
+          packedAssetIds[nextId] = packedAssetIds[previousId] ?? false
+          delete packedAssetIds[previousId]
+        }
+        return {
+          ...record,
+          packedAssetIds,
+          reservations: record.reservations.map((reservation) => {
+            if (reservation.itemId !== itemId) return reservation
+            const selectedAssetIds = [...reservation.selectedAssetIds]
+            selectedAssetIds[assetIndex] = nextId
+            return { ...reservation, selectedAssetIds }
+          }),
+        }
+      }),
+    )
+  }
+
+  const updateInventoryAssetId = (itemId: string, assetIndex: number, value: string) => {
+    const nextId = value.trim().toUpperCase()
+    setInventory((items) =>
+      items.map((item) => {
+        if (item.id !== itemId) return item
+        const assetIds = [...item.assetIds]
+        assetIds[assetIndex] = nextId
+        return { ...item, assetIds }
+      }),
+    )
+  }
+
+  const updateEventSchedule = (
+    eventId: string,
+    field: 'start' | 'startTime' | 'end' | 'endTime',
+    value: string,
+  ) => {
     setEvents((records) =>
       records.map((record) =>
-        record.recordId === eventId
-          ? {
-              ...record,
-              packingProgress: {
-                ...record.packingProgress,
-                [itemId]: packed,
-              },
-            }
-          : record,
+        record.recordId === eventId ? { ...record, [field]: value } : record,
       ),
     )
   }
@@ -910,7 +1010,13 @@ function App() {
           [field]: isQuantityField ? quantityValue : value,
           assetIds:
             field === 'total'
-              ? numberedIds(item.assetIds[0]?.split('-')[0] ?? item.id.toUpperCase(), quantityValue)
+              ? Array.from({ length: quantityValue }, (_, index) =>
+                  item.assetIds[index] ??
+                  numberedIds(
+                    item.assetIds[0]?.split('-')[0] ?? item.id.toUpperCase(),
+                    quantityValue,
+                  )[index],
+                )
               : item.assetIds,
         }
       }),
@@ -1078,6 +1184,7 @@ function App() {
       status: 'Reserved',
       reservations: reservationsWithAssets,
       packingProgress: {},
+      packedAssetIds: {},
     }
     const assignedNotifications = eventToAdd.assignedEmployees.map((employeeName, index) => ({
       id: `note-${Date.now()}-${index}`,
@@ -1124,6 +1231,15 @@ function App() {
               packingProgress: Object.fromEntries(
                 record.reservations.map((reservation) => [reservation.itemId, true]),
               ),
+              packedAssetIds: Object.fromEntries(
+                record.reservations.flatMap((reservation) =>
+                  (reservation.selectedAssetIds.length
+                    ? reservation.selectedAssetIds
+                    : [reservation.itemId + ':untracked']
+                  ).map((assetId) => [assetId, true]),
+                ),
+              ),
+              packedBy: currentStaff.name,
             }
           : record,
       ),
@@ -1141,7 +1257,9 @@ function App() {
 
     setEvents((records) =>
       records.map((record) =>
-        record.recordId === eventId ? { ...record, status: 'Checked Out' } : record,
+        record.recordId === eventId
+          ? { ...record, status: 'Checked Out', checkedOutBy: currentStaff.name }
+          : record,
       ),
     )
     setCheckoutMessage('Items checked out for deployment.')
@@ -1153,15 +1271,32 @@ function App() {
       return
     }
 
+    const assetReport = Object.fromEntries(
+      selectedEvent.reservations.flatMap((reservation) =>
+        reservation.selectedAssetIds.map((assetId) => [
+          assetId,
+          assetReturnLines[assetId] ?? { status: 'Returned', remarks: '' },
+        ]),
+      ),
+    ) as Record<string, AssetReturnLine>
     const report = Object.fromEntries(
       selectedEvent.reservations.map((reservation) => {
-        const line = returnLines[reservation.itemId] ?? {
-          returned: reservation.quantity,
-          damaged: 0,
-          missing: 0,
-          remarks: '',
-        }
-        return [reservation.itemId, line]
+        const statuses = reservation.selectedAssetIds.map(
+          (assetId) => assetReport[assetId]?.status ?? 'Returned',
+        )
+        return [reservation.itemId, {
+          returned: statuses.filter((status) => status === 'Returned').length,
+          damaged: statuses.filter((status) => status === 'Damaged').length,
+          missing: statuses.filter((status) => status === 'Missing').length,
+          remarks: reservation.selectedAssetIds
+            .map((assetId) =>
+              assetReport[assetId]?.remarks
+                ? assetId + ': ' + assetReport[assetId].remarks
+                : '',
+            )
+            .filter(Boolean)
+            .join('; '),
+        }]
       }),
     )
 
@@ -1179,40 +1314,33 @@ function App() {
     setEvents((records) =>
       records.map((record) =>
         record.recordId === selectedEvent.recordId
-          ? { ...record, returnReport: report, status: 'Returned' }
+          ? {
+              ...record,
+              returnReport: report,
+              assetReturnReport: assetReport,
+              returnReportBy: currentStaff.name,
+              status: 'Returned',
+            }
           : record,
       ),
     )
     setNotifications((records) => [...employerNotifications, ...records])
     addLog('Submitted return report', `${selectedEvent.title} return report submitted for employer review.`)
-    setReturnLines({})
+    setAssetReturnLines({})
     setActiveTab('events')
   }
 
-  const setReturnValue = (itemId: string, key: keyof ReturnLine, value: string) => {
-    if (key === 'remarks') {
-      setReturnLines((lines) => ({
-        ...lines,
-        [itemId]: {
-          ...(lines[itemId] ?? { returned: 0, damaged: 0, missing: 0, remarks: '' }),
-          remarks: value,
-        },
-      }))
-      return
-    }
-
-    const nextQuantity = parseWholeNumber(value)
-    if (nextQuantity === null) {
-      setInventoryQuantityError('Return quantities must be whole numbers only. Decimals are not saved.')
-      return
-    }
-    setInventoryQuantityError('')
-    setReturnLines((lines) => ({
+  const setAssetReturnValue = (
+    assetId: string,
+    field: keyof AssetReturnLine,
+    value: string,
+  ) => {
+    setAssetReturnLines((lines) => ({
       ...lines,
-      [itemId]: {
-        ...(lines[itemId] ?? { returned: 0, damaged: 0, missing: 0, remarks: '' }),
-        [key]: nextQuantity,
-      },
+      [assetId]: {
+        ...(lines[assetId] ?? { status: 'Returned', remarks: '' }),
+        [field]: value,
+      } as AssetReturnLine,
     }))
   }
 
@@ -1255,7 +1383,7 @@ function App() {
 
     setInventory((items) =>
       items.map((item) => {
-        const line = selectedEvent.returnReport?.[item.id] ?? returnLines[item.id]
+        const line = selectedEvent.returnReport?.[item.id]
         if (!line) {
           return item
         }
@@ -1276,7 +1404,6 @@ function App() {
       'Closed event',
       `${selectedEvent.title} reviewed and closed with return notes for ${selectedEvent.reservations.length} item groups.`,
     )
-    setReturnLines({})
   }
 
   const statusForItem = (item: InventoryItem): InventoryStatus => {
@@ -2092,12 +2219,32 @@ function App() {
                     />
                   </label>
                   <label>
+                    Start time
+                    <input
+                      type="time"
+                      value={newEvent.startTime}
+                      onChange={(event) =>
+                        setNewEvent((record) => ({ ...record, startTime: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
                     End date
                     <input
                       type="date"
                       value={newEvent.end}
                       onChange={(event) =>
                         setNewEvent((record) => ({ ...record, end: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    End time
+                    <input
+                      type="time"
+                      value={newEvent.endTime}
+                      onChange={(event) =>
+                        setNewEvent((record) => ({ ...record, endTime: event.target.value }))
                       }
                     />
                   </label>
@@ -2141,7 +2288,7 @@ function App() {
                   <div>
                     <h2>Check and confirm</h2>
                     <p>
-                      {formatDate(newEvent.start)} to {formatDate(newEvent.end)}
+                      {formatEventSchedule(newEvent)}
                     </p>
                   </div>
                   <Badge tone={hasShortage ? 'danger' : 'success'}>
@@ -2315,6 +2462,7 @@ function App() {
               {selectedEvent && (
                 <>
                   <EventProgress status={selectedEvent.status} />
+                  <p className="event-schedule">{formatEventSchedule(selectedEvent)}</p>
                   <TeamChips employees={selectedEvent.assignedEmployees} />
                   <div
                     className="packing-progress"
@@ -2349,6 +2497,48 @@ function App() {
                             </button>
                           ))}
                         </div>
+                      </div>
+                      <div className="event-time-editor">
+                        <label>
+                          Start date
+                          <input
+                            type="date"
+                            value={selectedEvent.start}
+                            onChange={(event) =>
+                              updateEventSchedule(selectedEvent.recordId, 'start', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          Start time
+                          <input
+                            type="time"
+                            value={selectedEvent.startTime}
+                            onChange={(event) =>
+                              updateEventSchedule(selectedEvent.recordId, 'startTime', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          End date
+                          <input
+                            type="date"
+                            value={selectedEvent.end}
+                            onChange={(event) =>
+                              updateEventSchedule(selectedEvent.recordId, 'end', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label>
+                          End time
+                          <input
+                            type="time"
+                            value={selectedEvent.endTime}
+                            onChange={(event) =>
+                              updateEventSchedule(selectedEvent.recordId, 'endTime', event.target.value)
+                            }
+                          />
+                        </label>
                       </div>
                       <label className="packing-add-item">
                         Add item
@@ -2385,57 +2575,26 @@ function App() {
                         return null
                       }
                       return (
-                        <label className="packing-row" key={reservation.itemId}>
-                          <input
-                            checked={selectedEvent.packingProgress[reservation.itemId] ?? false}
-                            disabled={
-                              portalMode !== 'employee' ||
-                              (selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed')
-                            }
-                            type="checkbox"
-                            onChange={(event) =>
-                              togglePackedItem(selectedEvent.recordId, reservation.itemId, event.target.checked)
-                            }
-                          />
-                          <div>
-                            <strong>{item.name}</strong>
-                            <span>
-                              {reservation.quantity} {item.unit}
-                              {reservation.quantity > 1 ? 's' : ''}
-                            </span>
-                            <AssetIdPreview assetIds={reservation.selectedAssetIds} />
+                        <div className="packing-row asset-packing-group" key={reservation.itemId}>
+                          <div className="packing-item-heading">
+                            <div><strong>{item.name}</strong><span>{reservation.quantity} {item.unit}{reservation.quantity > 1 ? 's' : ''}</span></div>
+                            {portalMode === 'employer' && selectedEventEditMode && (
+                              <div className="packing-edit-controls">
+                                <input aria-label={item.name + ' quantity'} inputMode="numeric" min={0} pattern="[0-9]*" step={1} type="number" value={reservation.quantity} onChange={(event) => updateEventReservationQuantity(selectedEvent.recordId, reservation.itemId, event.target.value)} />
+                                <button className="icon-action danger" onClick={() => removeEventReservationItem(selectedEvent.recordId, reservation.itemId)} type="button">Remove</button>
+                              </div>
+                            )}
                           </div>
-                          {portalMode === 'employer' && selectedEventEditMode && (
-                            <div className="packing-edit-controls">
-                              <input
-                                aria-label={`${item.name} quantity`}
-                                inputMode="numeric"
-                                min={0}
-                                pattern="[0-9]*"
-                                step={1}
-                                type="number"
-                                value={reservation.quantity}
-                                onChange={(event) =>
-                                  updateEventReservationQuantity(
-                                    selectedEvent.recordId,
-                                    reservation.itemId,
-                                    event.target.value,
-                                  )
-                                }
-                              />
-                              <button
-                                className="icon-action danger"
-                                onClick={(event) => {
-                                  event.preventDefault()
-                                  removeEventReservationItem(selectedEvent.recordId, reservation.itemId)
-                                }}
-                                type="button"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          )}
-                        </label>
+                          <div className="asset-checklist">
+                            {(reservation.selectedAssetIds.length ? reservation.selectedAssetIds : [reservation.itemId + ':untracked']).map((assetId, assetIndex) => (
+                              <div className="asset-check-row" key={assetId + assetIndex}>
+                                <input aria-label={'Pack ' + assetId} checked={selectedEvent.packedAssetIds[assetId] ?? false} disabled={portalMode !== 'employee' || (selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed')} type="checkbox" onChange={(event) => togglePackedAsset(selectedEvent.recordId, reservation.itemId, assetId, event.target.checked)} />
+                                {reservation.selectedAssetIds.length ? <input aria-label={item.name + ' asset ID ' + (assetIndex + 1)} className="asset-id-input" disabled={selectedEvent.status === 'Closed'} value={assetId} onChange={(event) => updateAssignedAssetId(selectedEvent.recordId, reservation.itemId, assetIndex, event.target.value)} /> : <span className="asset-id-summary">Untracked item</span>}
+                                <Badge tone={assetJourneyTone(assetJourneyStatus(selectedEvent, assetId))}>{assetJourneyStatus(selectedEvent, assetId)}</Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )
                     })}
                   </div>
@@ -2621,6 +2780,23 @@ function App() {
                       <strong>{item.name}</strong>
                       <span>{item.category}</span>
                       <AssetIdPreview assetIds={item.assetIds} />
+                      <details className="asset-id-editor">
+                        <summary>Edit item IDs</summary>
+                        <div>
+                          {item.assetIds.map((assetId, assetIndex) => (
+                            <label key={assetIndex}>
+                              {item.name} {assetIndex + 1}
+                              <input
+                                aria-label={item.name + ' item ID ' + (assetIndex + 1)}
+                                value={assetId}
+                                onChange={(event) =>
+                                  updateInventoryAssetId(item.id, assetIndex, event.target.value)
+                                }
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </details>
                     </div>
                   </div>
                   <div className="stock-editor">
@@ -2703,102 +2879,60 @@ function App() {
               </select>
             </div>
 
-            <div className="return-table">
-              {inventoryQuantityError && (
-                <p className="form-error quantity-warning">{inventoryQuantityError}</p>
-              )}
-              <div className="table-header">
-                <span>Item</span>
-                <span>Checked out</span>
-                <span>Returned quantity</span>
-                <span>Damaged quantity</span>
-                <span>Missing quantity</span>
-                <span>Remarks</span>
-              </div>
+            <div className="return-trace">
+              <strong>{formatEventSchedule(selectedEvent)}</strong>
+              <span>Packed by: {selectedEvent.packedBy || 'Not recorded'}</span>
+              <span>Checked out by: {selectedEvent.checkedOutBy || 'Not recorded'}</span>
+              <span>Return report by: {selectedEvent.returnReportBy || (portalMode === 'employee' ? currentStaff.name : 'Not submitted')}</span>
+            </div>
+
+            <div className="asset-return-list">
               {selectedEvent.reservations.map((reservation) => {
                 const item = inventoryById[reservation.itemId]
-                if (!item) {
-                  return null
-                }
-                const line = returnLines[item.id] ?? {
-                  returned: selectedEvent.returnReport?.[item.id]?.returned ?? reservation.quantity,
-                  damaged: selectedEvent.returnReport?.[item.id]?.damaged ?? 0,
-                  missing: selectedEvent.returnReport?.[item.id]?.missing ?? 0,
-                  remarks: selectedEvent.returnReport?.[item.id]?.remarks ?? '',
-                }
-                const reportIsReadOnly = portalMode === 'employer'
-
+                if (!item) return null
                 return (
-                  <div className="return-row" key={item.id}>
-                    <div>
+                  <section className="asset-return-group" key={item.id}>
+                    <div className="asset-return-heading">
                       <strong>{item.name}</strong>
-                      <AssetIdPreview assetIds={reservation.selectedAssetIds} />
+                      <span>{reservation.selectedAssetIds.length} tracked items</span>
                     </div>
-                    <span>{reservation.quantity}</span>
-                    {reportIsReadOnly ? (
-                      <>
-                        <span>{line.returned}</span>
-                        <span>{line.damaged}</span>
-                        <span>{line.missing}</span>
-                        <span>{line.remarks || 'No remarks'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <label>
-                          Returned quantity
-                          <input
-                            inputMode="numeric"
-                            min={0}
-                            pattern="[0-9]*"
-                            step={1}
-                            type="number"
-                            value={line.returned}
-                            onChange={(event) =>
-                              setReturnValue(item.id, 'returned', event.target.value)
-                            }
-                          />
-                        </label>
-                        <label>
-                          Damaged quantity
-                          <input
-                            inputMode="numeric"
-                            min={0}
-                            pattern="[0-9]*"
-                            step={1}
-                            type="number"
-                            value={line.damaged}
-                            onChange={(event) =>
-                              setReturnValue(item.id, 'damaged', event.target.value)
-                            }
-                          />
-                        </label>
-                        <label>
-                          Missing quantity
-                          <input
-                            inputMode="numeric"
-                            min={0}
-                            pattern="[0-9]*"
-                            step={1}
-                            type="number"
-                            value={line.missing}
-                            onChange={(event) =>
-                              setReturnValue(item.id, 'missing', event.target.value)
-                            }
-                          />
-                        </label>
-                        <label>
-                          Remarks
-                          <input
-                            placeholder="e.g. Missing charger, cracked screen"
-                            value={line.remarks}
-                            onChange={(event) =>
-                              setReturnValue(item.id, 'remarks', event.target.value)
-                            }
-                          />
-                        </label>
-                      </>
-                    )}
-                  </div>
+                    {reservation.selectedAssetIds.map((assetId) => {
+                      const line =
+                        assetReturnLines[assetId] ??
+                        selectedEvent.assetReturnReport?.[assetId] ??
+                        { status: 'Returned' as AssetReturnStatus, remarks: '' }
+                      const readOnly = portalMode === 'employer'
+                      return (
+                        <div className="asset-return-row" key={assetId}>
+                          <strong>{assetId}</strong>
+                          {readOnly ? (
+                            <Badge tone={line.status === 'Returned' ? 'success' : line.status === 'Damaged' ? 'warning' : 'danger'}>{line.status}</Badge>
+                          ) : (
+                            <label>
+                              Item status
+                              <select value={line.status} onChange={(event) => setAssetReturnValue(assetId, 'status', event.target.value)}>
+                                <option>Returned</option>
+                                <option>Missing</option>
+                                <option>Damaged</option>
+                              </select>
+                            </label>
+                          )}
+                          {readOnly ? (
+                            <span>{line.remarks || 'No remarks'}</span>
+                          ) : (
+                            <label className="asset-remarks">
+                              Remarks
+                              <input
+                                placeholder={line.status === 'Damaged' ? 'Describe the damage' : line.status === 'Missing' ? 'Last known location' : 'Optional notes'}
+                                value={line.remarks}
+                                onChange={(event) => setAssetReturnValue(assetId, 'remarks', event.target.value)}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </section>
                 )
               })}
             </div>
@@ -2979,7 +3113,7 @@ function EventSummary({
       <div>
         <strong>{event.title}</strong>
         <span>
-          {event.id} - {event.type} - {formatDate(event.start)} to {formatDate(event.end)}
+          {event.id} - {event.type} - {formatEventSchedule(event)}
         </span>
         <span>
           {event.location}
@@ -3054,6 +3188,8 @@ function ReturnReportSummary({
           <p>
             Employer review: {totalMissing} missing, {totalDamaged} damaged.
           </p>
+          <p>{formatEventSchedule(event)}</p>
+          <p>Packed by: {event.packedBy || 'Not recorded'} � Checked out by: {event.checkedOutBy || 'Not recorded'} � Report submitted by: {event.returnReportBy || 'Not recorded'}</p>
         </div>
         <Badge tone={totalMissing > 0 || totalDamaged > 0 ? 'warning' : 'success'}>
           Ready for review
@@ -3068,6 +3204,19 @@ function ReturnReportSummary({
             <span>Damaged: {report.damaged}</span>
             <span>Missing: {report.missing}</span>
             <p>{report.remarks || 'No remarks'}</p>
+            <div className="asset-summary-items">
+              {reservation.selectedAssetIds.map((assetId) => {
+                const assetLine = event.assetReturnReport?.[assetId]
+                const status = assetLine?.status ?? 'Returned'
+                return (
+                  <span key={assetId}>
+                    <strong>{assetId}</strong>
+                    <Badge tone={assetJourneyTone(status)}>{status}</Badge>
+                    {assetLine?.remarks && <small>{assetLine.remarks}</small>}
+                  </span>
+                )
+              })}
+            </div>
           </div>
         ))}
       </div>
