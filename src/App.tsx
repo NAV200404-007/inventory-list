@@ -2736,13 +2736,6 @@ function App() {
                     <div>
                       <strong>{item.name}</strong>
                       <span>{item.category}</span>
-                      <AssetIdPreview
-                        assetIds={item.assetIds}
-                        itemName={item.name}
-                        onAssetIdChange={(assetIndex, value) =>
-                          updateInventoryAssetId(item.id, assetIndex, value)
-                        }
-                      />
                     </div>
                   </div>
                   <div className="stock-editor">
@@ -2795,6 +2788,15 @@ function App() {
                   </div>
                   <div className="status-cell">
                     <Badge tone={statusTone(statusForItem(item))}>{statusForItem(item)}</Badge>
+                  </div>
+                  <div className="inventory-asset-container">
+                    <AssetIdPreview
+                      assetIds={item.assetIds}
+                      itemName={item.name}
+                      onAssetIdChange={(assetIndex, value) =>
+                        updateInventoryAssetId(item.id, assetIndex, value)
+                      }
+                    />
                   </div>
                 </div>
               ))}
@@ -3166,24 +3168,34 @@ function AssetIdPreview({
     return <span className="asset-id-summary">IDs assigned after confirmation</span>
   }
 
-  return (
-    <details className="asset-preview">
-      <summary>{assetIds.length === 1 ? assetIds[0] : 'View ' + assetIds.length + ' item IDs'}</summary>
-      <div className={onAssetIdChange ? 'asset-preview-edit-grid' : ''}>
-        {assetIds.map((assetId, assetIndex) =>
-          onAssetIdChange ? (
+  if (onAssetIdChange) {
+    return (
+      <div className="asset-preview asset-preview-inline">
+        <div className="asset-preview-heading">
+          <strong>Item IDs</strong>
+          <span>{assetIds.length} items</span>
+        </div>
+        <div className="asset-preview-edit-grid">
+          {assetIds.map((assetId, assetIndex) => (
             <label key={assetIndex}>
-              <span>{itemName || 'Item'} {assetIndex + 1}</span>
+              <span className="sr-only">{itemName || 'Item'} {assetIndex + 1}</span>
               <input
                 aria-label={(itemName || 'Item') + ' ID ' + (assetIndex + 1)}
                 value={assetId}
                 onChange={(event) => onAssetIdChange(assetIndex, event.target.value)}
               />
             </label>
-          ) : (
-            <span key={assetId}>{assetId}</span>
-          ),
-        )}
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <details className="asset-preview">
+      <summary>{assetIds.length === 1 ? assetIds[0] : 'View ' + assetIds.length + ' item IDs'}</summary>
+      <div>
+        {assetIds.map((assetId) => <span key={assetId}>{assetId}</span>)}
       </div>
     </details>
   )
