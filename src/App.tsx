@@ -915,6 +915,62 @@ function App() {
     )
   }
 
+  const setInventoryAssetStatus = (
+    itemId: string,
+    assetId: string,
+    status: 'Available' | 'Damaged' | 'Missing',
+  ) => {
+    setInventory((items) =>
+      items.map((item) => {
+        if (item.id !== itemId) return item
+        const previousConditions = item.assetConditions ?? {}
+        const previous = previousConditions[assetId]
+        const identifiedDamaged = Object.values(previousConditions).filter((condition) => condition.status === 'Damaged').length
+        const identifiedMissing = Object.values(previousConditions).filter((condition) => condition.status === 'Missing').length
+        let unidentifiedDamaged = Math.max(0, item.damaged - identifiedDamaged)
+        let unidentifiedMissing = Math.max(0, item.missing - identifiedMissing)
+        const assetConditions = { ...previousConditions }
+
+        if (status === 'Available') {
+          delete assetConditions[assetId]
+        } else {
+          if (status === 'Damaged' && previous?.status !== 'Damaged' && unidentifiedDamaged > 0) unidentifiedDamaged -= 1
+          if (status === 'Missing' && previous?.status !== 'Missing' && unidentifiedMissing > 0) unidentifiedMissing -= 1
+          assetConditions[assetId] = {
+            status,
+            remarks: previous?.remarks ?? '',
+            eventId: previous?.eventId ?? 'Manual update',
+            eventTitle: previous?.eventTitle ?? 'Inventory',
+            reportedBy: previous?.reportedBy ?? currentStaff.name,
+          }
+        }
+
+        return {
+          ...item,
+          assetConditions,
+          damaged: unidentifiedDamaged + Object.values(assetConditions).filter((condition) => condition.status === 'Damaged').length,
+          missing: unidentifiedMissing + Object.values(assetConditions).filter((condition) => condition.status === 'Missing').length,
+        }
+      }),
+    )
+  }
+
+  const updateInventoryAssetRemarks = (itemId: string, assetId: string, remarks: string) => {
+    setInventory((items) =>
+      items.map((item) => {
+        const condition = item.assetConditions?.[assetId]
+        if (item.id !== itemId || !condition) return item
+        return {
+          ...item,
+          assetConditions: {
+            ...item.assetConditions,
+            [assetId]: { ...condition, remarks },
+          },
+        }
+      }),
+    )
+  }
+
   const resolveAssetIssue = (itemId: string, assetId: string) => {
     setInventory((items) =>
       items.map((item) => {
@@ -2335,7 +2391,7 @@ function App() {
                     <div>
                       <span className="eyebrow">{newEvent.id}</span>
                       <h2>{newEvent.title}</h2>
-                      <p>{newEvent.location} � {formatEventSchedule(newEvent)}</p>
+                      <p>{newEvent.location} - {formatEventSchedule(newEvent)}</p>
                     </div>
                     <Badge tone={hasShortage ? 'danger' : 'success'}>{hasShortage ? 'Shortage found' : 'Ready to reserve'}</Badge>
                   </div>
@@ -2823,35 +2879,9 @@ function App() {
                     <strong>{getUsable(item)} usable</strong>
                   </div>
                   <span>{reservedQuantity(item.id, '2026-06-02', '2026-12-31')}</span>
-                  <div className="issue-inputs">
-                    <label>
-                      Damaged
-                      <input
-                        inputMode="numeric"
-                        min={0}
-                        pattern="[0-9]*"
-                        step={1}
-                        type="number"
-                        value={item.damaged}
-                        onChange={(event) =>
-                          updateInventoryItem(item.id, 'damaged', event.target.value)
-                        }
-                      />
-                    </label>
-                    <label>
-                      Missing
-                      <input
-                        inputMode="numeric"
-                        min={0}
-                        pattern="[0-9]*"
-                        step={1}
-                        type="number"
-                        value={item.missing}
-                        onChange={(event) =>
-                          updateInventoryItem(item.id, 'missing', event.target.value)
-                        }
-                      />
-                    </label>
+                  <div className="issue-summary" aria-label="Asset issue totals">
+                    <div><span>Damaged</span><strong>{item.damaged}</strong></div>
+                    <div><span>Missing</span><strong>{item.missing}</strong></div>
                   </div>
                   <div className="status-cell">
                     <Badge tone={statusTone(statusForItem(item))}>{statusForItem(item)}</Badge>
@@ -2861,7 +2891,17 @@ function App() {
                       assetIds={item.assetIds}
                       assetConditions={item.assetConditions}
                       itemName={item.name}
+                      unidentifiedIssueCount={
+                        Math.max(0, item.damaged - Object.values(item.assetConditions ?? {}).filter((condition) => condition.status === 'Damaged').length) +
+                        Math.max(0, item.missing - Object.values(item.assetConditions ?? {}).filter((condition) => condition.status === 'Missing').length)
+                      }
                       onResolveIssue={(assetId) => resolveAssetIssue(item.id, assetId)}
+                      onAssetStatusChange={(assetId, status) =>
+                        setInventoryAssetStatus(item.id, assetId, status)
+                      }
+                      onAssetRemarksChange={(assetId, remarks) =>
+                        updateInventoryAssetRemarks(item.id, assetId, remarks)
+                      }
                       onAssetIdChange={(assetIndex, value) =>
                         updateInventoryAssetId(item.id, assetIndex, value)
                       }
@@ -3189,7 +3229,7 @@ function ReturnReportSummary({
             Employer review: {totalMissing} missing, {totalDamaged} damaged.
           </p>
           <p>{formatEventSchedule(event)}</p>
-          <p>Packed by: {event.packedBy || 'Not recorded'} � Checked out by: {event.checkedOutBy || 'Not recorded'} � Report submitted by: {event.returnReportBy || 'Not recorded'}</p>
+          <p>Packed by: {event.packedBy || 'Not recorded'} - Checked out by: {event.checkedOutBy || 'Not recorded'} - Report submitted by: {event.returnReportBy || 'Not recorded'}</p>
         </div>
         <Badge tone={totalMissing > 0 || totalDamaged > 0 ? 'warning' : 'success'}>
           Ready for review
@@ -3228,13 +3268,19 @@ function AssetIdPreview({
   assetConditions,
   assetIds,
   itemName,
+  unidentifiedIssueCount,
   onAssetIdChange,
+  onAssetRemarksChange,
+  onAssetStatusChange,
   onResolveIssue,
 }: {
   assetConditions?: Record<string, AssetCondition>
   assetIds: string[]
   itemName?: string
+  unidentifiedIssueCount?: number
   onAssetIdChange?: (assetIndex: number, value: string) => void
+  onAssetRemarksChange?: (assetId: string, remarks: string) => void
+  onAssetStatusChange?: (assetId: string, status: 'Available' | 'Damaged' | 'Missing') => void
   onResolveIssue?: (assetId: string) => void
 }) {
   if (assetIds.length === 0) return <span className="asset-id-summary">IDs assigned after confirmation</span>
@@ -3245,18 +3291,36 @@ function AssetIdPreview({
       <div className="asset-preview asset-preview-inline">
         <div className="asset-preview-heading">
           <strong>Item IDs</strong>
-          <span>{assetIds.length} items{issueCount ? ' � ' + issueCount + ' issues' : ''}</span>
+          <span>{assetIds.length} items{issueCount ? ' - ' + issueCount + ' issues' : ''}</span>
         </div>
+        {Boolean(unidentifiedIssueCount) && (
+          <p className="unidentified-issue-warning">
+            {unidentifiedIssueCount} issue{unidentifiedIssueCount === 1 ? '' : 's'} need an item ID. Set the correct item status below.
+          </p>
+        )}
         <div className="asset-preview-edit-grid">
           {assetIds.map((assetId, assetIndex) => {
             const condition = assetConditions?.[assetId]
             return (
               <div className={'asset-id-field ' + (condition ? condition.status.toLowerCase() : '')} key={assetIndex}>
-                <input aria-label={(itemName || 'Item') + ' ID ' + (assetIndex + 1)} value={assetId} onChange={(event) => onAssetIdChange(assetIndex, event.target.value)} />
+                <div className="asset-id-control">
+                  <input aria-label={(itemName || 'Item') + ' ID ' + (assetIndex + 1)} value={assetId} onChange={(event) => onAssetIdChange(assetIndex, event.target.value)} />
+                  {onAssetStatusChange && (
+                    <select aria-label={assetId + ' status'} value={condition?.status ?? 'Available'} onChange={(event) => onAssetStatusChange(assetId, event.target.value as 'Available' | 'Damaged' | 'Missing')}>
+                      <option>Available</option>
+                      <option>Damaged</option>
+                      <option>Missing</option>
+                    </select>
+                  )}
+                </div>
                 {condition && (
                   <div className="asset-condition">
                     <Badge tone={condition.status === 'Missing' ? 'danger' : 'warning'}>{condition.status}</Badge>
-                    <small title={condition.eventTitle + ' � reported by ' + condition.reportedBy}>{condition.remarks || condition.eventId}</small>
+                    {onAssetRemarksChange ? (
+                      <input className="asset-condition-note" placeholder="Add issue note" value={condition.remarks} onChange={(event) => onAssetRemarksChange(assetId, event.target.value)} />
+                    ) : (
+                      <small title={condition.eventTitle + ' - reported by ' + condition.reportedBy}>{condition.remarks || condition.eventId}</small>
+                    )}
                     {onResolveIssue && <button aria-label={'Mark ' + assetId + ' resolved'} onClick={() => onResolveIssue(assetId)} title="Mark resolved" type="button"><CheckCircle2 size={14} aria-hidden="true" /></button>}
                   </div>
                 )}
