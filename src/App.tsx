@@ -1784,7 +1784,91 @@ function App() {
               </Badge>
             </section>
 
-            <div className="profile-grid">
+            <div className={`profile-grid ${profileSettingsOpen ? 'settings-open' : ''}`}>
+              {profileSettingsOpen ? (
+                <section className="surface profile-panel settings-panel">
+                  <div className="section-heading">
+                    <div>
+                      <h2>Settings</h2>
+                      <p>Display and account settings for this login.</p>
+                    </div>
+                    <button
+                      className="icon-action"
+                      onClick={() => setProfileSettingsOpen(false)}
+                      type="button"
+                    >
+                      Back
+                    </button>
+                  </div>
+
+                  <div className="settings-list">
+                    <div className="settings-row">
+                      <div>
+                        <strong>Dark mode</strong>
+                        <span>Use a darker interface for low-light rooms.</span>
+                      </div>
+                      <button
+                        className="secondary-action"
+                        onClick={() => setThemeMode((mode) => (mode === 'dark' ? 'light' : 'dark'))}
+                        type="button"
+                      >
+                        {themeMode === 'dark' ? (
+                          <Sun size={17} aria-hidden="true" />
+                        ) : (
+                          <Moon size={17} aria-hidden="true" />
+                        )}
+                        {themeMode === 'dark' ? 'Light mode' : 'Dark mode'}
+                      </button>
+                    </div>
+
+                    <div className="settings-password">
+                      <div>
+                        <strong>Change password</strong>
+                        <span>Update the password for {currentStaff.name}.</span>
+                      </div>
+                      <label>
+                        Current password
+                        <input
+                          autoComplete="current-password"
+                          type="password"
+                          value={currentPasswordInput}
+                          onChange={(event) => {
+                            setCurrentPasswordInput(event.target.value)
+                            setSettingsMessage('')
+                          }}
+                        />
+                      </label>
+                      <label>
+                        New password
+                        <input
+                          autoComplete="new-password"
+                          minLength={4}
+                          type="password"
+                          value={newPasswordInput}
+                          onChange={(event) => {
+                            setNewPasswordInput(event.target.value)
+                            setSettingsMessage('')
+                          }}
+                        />
+                      </label>
+                      <button className="primary-action" onClick={changeCurrentPassword} type="button">
+                        <LockKeyhole size={17} aria-hidden="true" />
+                        Save password
+                      </button>
+                      {settingsMessage && (
+                        <p
+                          className={
+                            settingsMessage === 'Password updated.' ? 'inline-success' : 'form-error'
+                          }
+                        >
+                          {settingsMessage}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              ) : (
+                <>
               <section className="surface profile-panel">
                 <div className="section-heading">
                   <div>
@@ -1908,82 +1992,7 @@ function App() {
                   ))}
                 </div>
               </section>
-
-              {profileSettingsOpen && (
-                <section className="surface profile-panel settings-panel">
-                  <div className="section-heading">
-                    <div>
-                      <h2>Settings</h2>
-                      <p>Display and account settings for this login.</p>
-                    </div>
-                  </div>
-
-                  <div className="settings-list">
-                    <div className="settings-row">
-                      <div>
-                        <strong>Dark mode</strong>
-                        <span>Use a darker interface for low-light rooms.</span>
-                      </div>
-                      <button
-                        className="secondary-action"
-                        onClick={() => setThemeMode((mode) => (mode === 'dark' ? 'light' : 'dark'))}
-                        type="button"
-                      >
-                        {themeMode === 'dark' ? (
-                          <Sun size={17} aria-hidden="true" />
-                        ) : (
-                          <Moon size={17} aria-hidden="true" />
-                        )}
-                        {themeMode === 'dark' ? 'Light mode' : 'Dark mode'}
-                      </button>
-                    </div>
-
-                    <div className="settings-password">
-                      <div>
-                        <strong>Change password</strong>
-                        <span>Update the password for {currentStaff.name}.</span>
-                      </div>
-                      <label>
-                        Current password
-                        <input
-                          autoComplete="current-password"
-                          type="password"
-                          value={currentPasswordInput}
-                          onChange={(event) => {
-                            setCurrentPasswordInput(event.target.value)
-                            setSettingsMessage('')
-                          }}
-                        />
-                      </label>
-                      <label>
-                        New password
-                        <input
-                          autoComplete="new-password"
-                          minLength={4}
-                          type="password"
-                          value={newPasswordInput}
-                          onChange={(event) => {
-                            setNewPasswordInput(event.target.value)
-                            setSettingsMessage('')
-                          }}
-                        />
-                      </label>
-                      <button className="primary-action" onClick={changeCurrentPassword} type="button">
-                        <LockKeyhole size={17} aria-hidden="true" />
-                        Save password
-                      </button>
-                      {settingsMessage && (
-                        <p
-                          className={
-                            settingsMessage === 'Password updated.' ? 'inline-success' : 'form-error'
-                          }
-                        >
-                          {settingsMessage}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </section>
+                </>
               )}
             </div>
           </section>

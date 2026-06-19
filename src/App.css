@@ -1191,6 +1191,10 @@ label {
   gap: 18px;
 }
 
+.profile-grid.settings-open {
+  grid-template-columns: 1fr;
+}
+
 .profile-panel {
   min-width: 0;
 }
