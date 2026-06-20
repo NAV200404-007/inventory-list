@@ -851,9 +851,14 @@ function App() {
   }
 
   const togglePackedAsset = (eventId: string, itemId: string, assetId: string, packed: boolean) => {
+    if (portalMode !== 'employee') return
     setEvents((records) =>
       records.map((record) => {
-        if (record.recordId !== eventId) return record
+        if (
+          record.recordId !== eventId ||
+          record.status !== 'Reserved' ||
+          !record.assignedEmployees.includes(currentStaff.name)
+        ) return record
         const reservation = record.reservations.find((entry) => entry.itemId === itemId)
         const assetKeys = reservation?.selectedAssetIds.length
           ? reservation.selectedAssetIds
@@ -1268,7 +1273,16 @@ function App() {
   }
 
   const confirmEvent = () => {
-    if (hasShortage || !newEvent.title.trim()) {
+    if (
+      portalMode !== 'employer' ||
+      hasShortage ||
+      !eventTimesValid ||
+      !newEvent.title.trim() ||
+      !newEvent.id.trim() ||
+      !newEvent.location.trim() ||
+      newEvent.assignedEmployees.length === 0 ||
+      !newEvent.reservations.some((reservation) => reservation.quantity > 0)
+    ) {
       return
     }
 
@@ -1319,9 +1333,12 @@ function App() {
   }
 
   const markAllPackingChecks = (eventId: string) => {
+    if (portalMode !== 'employee') return
     setEvents((records) =>
       records.map((record) =>
-        record.recordId === eventId
+        record.recordId === eventId &&
+        record.status === 'Reserved' &&
+        record.assignedEmployees.includes(currentStaff.name)
           ? {
               ...record,
               packedAssetIds: Object.fromEntries(
@@ -1372,7 +1389,19 @@ function App() {
 
   const packEvent = (eventId: string) => {
     const event = events.find((record) => record.recordId === eventId)
-    if (!event) {
+    const assetKeys = event?.reservations.flatMap((reservation) =>
+      reservation.selectedAssetIds.length
+        ? reservation.selectedAssetIds
+        : [reservation.itemId + ':untracked'],
+    ) ?? []
+    if (
+      !event ||
+      portalMode !== 'employee' ||
+      event.status !== 'Reserved' ||
+      !event.assignedEmployees.includes(currentStaff.name) ||
+      assetKeys.length === 0 ||
+      !assetKeys.every((assetId) => event.packedAssetIds[assetId])
+    ) {
       return
     }
 
@@ -1417,7 +1446,7 @@ function App() {
 
   const approveCheckoutEvent = (eventId: string) => {
     const event = events.find((record) => record.recordId === eventId)
-    if (!event || event.status !== 'Packed') return
+    if (!event || portalMode !== 'employer' || event.status !== 'Packed') return
     const employeeNotifications = event.assignedEmployees.map((employeeName, index) => ({
       id: 'note-' + Date.now() + '-checkout-' + index,
       staff: employeeName,
@@ -1434,7 +1463,18 @@ function App() {
 
   const checkoutEvent = (eventId: string) => {
     const event = events.find((record) => record.recordId === eventId)
-    if (!event || event.status !== 'Packed' || !event.checkoutApproved || !event.assignedEmployees.includes(currentStaff.name)) return
+    if (
+      !event ||
+      portalMode !== 'employee' ||
+      event.status !== 'Packed' ||
+      !event.checkoutApproved ||
+      !event.assignedEmployees.includes(currentStaff.name) ||
+      !event.reservations.flatMap((reservation) =>
+        reservation.selectedAssetIds.length
+          ? reservation.selectedAssetIds
+          : [reservation.itemId + ':untracked'],
+      ).every((assetId) => event.packedAssetIds[assetId])
+    ) return
 
     const employerNotifications = accounts.filter((account) => account.portal === 'employer').map((account, index) => ({
       id: 'note-' + Date.now() + '-checked-out-' + index,
@@ -1451,7 +1491,12 @@ function App() {
   }
 
   const submitReturnReport = () => {
-    if (!selectedEvent) {
+    if (
+      !selectedEvent ||
+      portalMode !== 'employee' ||
+      selectedEvent.status !== 'Checked Out' ||
+      !selectedEvent.assignedEmployees.includes(currentStaff.name)
+    ) {
       return
     }
 
@@ -1561,7 +1606,7 @@ function App() {
   }
 
   const closeEvent = () => {
-    if (!selectedEvent) {
+    if (!selectedEvent || portalMode !== 'employer' || selectedEvent.status !== 'Returned') {
       return
     }
 
@@ -2536,7 +2581,7 @@ function App() {
                     {portalMode === 'employer' && (
                       <button
                         className="icon-action"
-                        disabled={selectedEvent.status === 'Closed'}
+                        disabled={selectedEvent.status !== 'Reserved'}
                         onClick={() =>
                           setEditingPackingEventId((currentId) =>
                             currentId === selectedEvent.recordId ? '' : selectedEvent.recordId,
@@ -2570,8 +2615,7 @@ function App() {
                       <span style={{ width: `${selectedEventPackingPercent}%` }} />
                     </div>
                   </div>
-                  {portalMode === 'employee' &&
-                    (selectedEvent.status === 'Reserved' || selectedEvent.status === 'Packed') && (
+                  {portalMode === 'employee' && selectedEvent.status === 'Reserved' && (
                       <button className="secondary-action bulk-action" onClick={() => markAllPackingChecks(selectedEvent.recordId)} type="button">
                         <CheckCircle2 size={17} aria-hidden="true" />
                         Check all items
@@ -2692,13 +2736,13 @@ function App() {
                             {(reservation.selectedAssetIds.length ? reservation.selectedAssetIds : [reservation.itemId + ':untracked']).map((assetId, assetIndex) => (
                               <div className={'asset-check-row ' + (portalMode === 'employer' ? 'employer-view' : 'employee-view')} key={assetId + assetIndex}>
                                 {portalMode === 'employee' && (
-                                  <input aria-label={'Pack ' + assetId} checked={selectedEvent.packedAssetIds[assetId] ?? false} disabled={selectedEvent.status !== 'Reserved' && selectedEvent.status !== 'Packed'} type="checkbox" onChange={(event) => togglePackedAsset(selectedEvent.recordId, reservation.itemId, assetId, event.target.checked)} />
+                                  <input aria-label={'Pack ' + assetId} checked={selectedEvent.packedAssetIds[assetId] ?? false} disabled={selectedEvent.status !== 'Reserved'} type="checkbox" onChange={(event) => togglePackedAsset(selectedEvent.recordId, reservation.itemId, assetId, event.target.checked)} />
                                 )}
                                 {reservation.selectedAssetIds.length ? (
                                   portalMode === 'employer' && !selectedEventEditMode ? (
                                     <strong className="asset-list-id">{assetId}</strong>
                                   ) : (
-                                    <input aria-label={item.name + ' asset ID ' + (assetIndex + 1)} className="asset-id-input" disabled={selectedEvent.status === 'Closed'} value={assetId} onChange={(event) => updateAssignedAssetId(selectedEvent.recordId, reservation.itemId, assetIndex, event.target.value)} />
+                                    <input aria-label={item.name + ' asset ID ' + (assetIndex + 1)} className="asset-id-input" disabled={selectedEvent.status !== 'Reserved'} value={assetId} onChange={(event) => updateAssignedAssetId(selectedEvent.recordId, reservation.itemId, assetIndex, event.target.value)} />
                                   )
                                 ) : (
                                   <span className="asset-id-summary">Untracked item</span>
@@ -2712,52 +2756,53 @@ function App() {
                     })}
                   </div>
 
-                  <div className="action-row">
-                    {portalMode === 'employee' && selectedEvent.status === 'Reserved' && (
+                  {portalMode === 'employee' && selectedEvent.status === 'Reserved' && (
+                    <div className="action-row">
                       <button className="primary-action" disabled={!selectedEventAllPacked} onClick={() => packEvent(selectedEvent.recordId)} type="button">
                         <PackageCheck size={18} aria-hidden="true" />
                         Mark packed and ready
                       </button>
-                    )}
-                    {portalMode === 'employee' && selectedEvent.status === 'Packed' && (
+                    </div>
+                  )}
+                  {portalMode === 'employee' && selectedEvent.status === 'Packed' && (
+                    <div className="action-row">
                       <button className="primary-action" disabled={!selectedEvent.checkoutApproved} onClick={() => checkoutEvent(selectedEvent.recordId)} type="button">
                         <Truck size={18} aria-hidden="true" />
-                        {selectedEvent.checkoutApproved ? 'Check out items' : 'Waiting for checkout approval'}
+                        {selectedEvent.checkoutApproved ? 'Check out items' : 'Waiting for employer approval'}
                       </button>
-                    )}
-                    {portalMode === 'employer' && (
-                      <button className="secondary-action" disabled={selectedEvent.status !== 'Packed' || selectedEvent.checkoutApproved} onClick={() => approveCheckoutEvent(selectedEvent.recordId)} type="button">
+                    </div>
+                  )}
+                  {portalMode === 'employee' && selectedEvent.status === 'Checked Out' && (
+                    <div className="action-row">
+                      <button className="primary-action" onClick={() => { setAssetReturnLines({}); setActiveTab('returns') }} type="button">
+                        <ClipboardList size={18} aria-hidden="true" />
+                        Submit return report
+                      </button>
+                    </div>
+                  )}
+                  {portalMode === 'employer' && selectedEvent.status === 'Packed' && (
+                    <div className="action-row">
+                      <button className="primary-action" disabled={selectedEvent.checkoutApproved} onClick={() => approveCheckoutEvent(selectedEvent.recordId)} type="button">
                         <Truck size={18} aria-hidden="true" />
                         {selectedEvent.checkoutApproved ? 'Checkout approved' : 'Approve checkout'}
                       </button>
-                    )}
-                  </div>
-                  <div className="action-row">
-                    <button
-                      className="secondary-action"
-                      disabled={
-                        portalMode === 'employee'
-                          ? selectedEvent.status !== 'Checked Out'
-                          : selectedEvent.status !== 'Returned'
-                      }
-                      onClick={() => setActiveTab('returns')}
-                      type="button"
-                    >
-                      <ClipboardList size={18} aria-hidden="true" />
-                      {portalMode === 'employee' ? 'Submit return report' : 'Review returns'}
-                    </button>
-                    {portalMode === 'employer' && (
-                      <button
-                        className="primary-action"
-                        disabled={selectedEvent.status !== 'Returned'}
-                        onClick={closeEvent}
-                        type="button"
-                      >
+                    </div>
+                  )}
+                  {portalMode === 'employer' && selectedEvent.status === 'Checked Out' && (
+                    <p className="workflow-waiting">Waiting for the assigned employee to submit the return report.</p>
+                  )}
+                  {portalMode === 'employer' && selectedEvent.status === 'Returned' && (
+                    <div className="action-row">
+                      <button className="secondary-action" onClick={() => setActiveTab('returns')} type="button">
+                        <ClipboardList size={18} aria-hidden="true" />
+                        Review returns
+                      </button>
+                      <button className="primary-action" onClick={closeEvent} type="button">
                         <CheckCircle2 size={18} aria-hidden="true" />
                         Close event
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   {checkoutMessage && <p className="inline-success">{checkoutMessage}</p>}
                   {selectedEvent.returnReport && (
                     <ReturnReportSummary event={selectedEvent} inventoryById={inventoryById} />
@@ -2960,7 +3005,10 @@ function App() {
                 )}
                               <select
                 value={selectedEvent.recordId}
-                onChange={(event) => setSelectedEventId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedEventId(event.target.value)
+                  setAssetReturnLines({})
+                }}
               >
                 {visibleEvents.map((event) => (
                   <option key={event.recordId} value={event.recordId}>
