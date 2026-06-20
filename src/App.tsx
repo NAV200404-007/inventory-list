@@ -317,6 +317,47 @@ const templates: Record<string, Reservation[]> = {
   ],
 }
 
+function todayInputValue() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Singapore',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
+function nextEventCode(events: EventRecord[]) {
+  const year = new Date().getFullYear()
+  const prefix = `EVT-${year}-`
+  const highest = events.reduce((current, event) => {
+    if (!event.id.startsWith(prefix)) return current
+    const sequence = Number.parseInt(event.id.slice(prefix.length), 10)
+    return Number.isFinite(sequence) ? Math.max(current, sequence) : current
+  }, 0)
+  return `${prefix}${String(highest + 1).padStart(3, '0')}`
+}
+
+function createEventDraft(events: EventRecord[]): EventRecord {
+  const date = todayInputValue()
+  return {
+    recordId: '',
+    id: nextEventCode(events),
+    title: '',
+    type: 'VEX IQ workshop',
+    location: '',
+    start: date,
+    startTime: '09:00',
+    end: date,
+    endTime: '17:00',
+    assignedEmployees: [],
+    status: 'Draft',
+    reservations: templates['VEX IQ workshop'].map((reservation) => ({ ...reservation })),
+    packingProgress: {},
+    packedAssetIds: {},
+    checkoutApproved: false,
+  }
+}
+
 const initialAudit: AuditLog[] = []
 
 const initialNotifications: NotificationRecord[] = []
@@ -459,6 +500,7 @@ function App() {
   const [registerPassword, setRegisterPassword] = useState('')
   const [registerError, setRegisterError] = useState('')
   const [registerSuccess, setRegisterSuccess] = useState('')
+  const [employerSetupComplete, setEmployerSetupComplete] = useState(false)
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [inventory, setInventory] = useState<InventoryItem[]>(initialInventory)
   const [events, setEvents] = useState<EventRecord[]>(initialEvents)
@@ -489,23 +531,7 @@ function App() {
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
   const [newPasswordInput, setNewPasswordInput] = useState('')
   const [settingsMessage, setSettingsMessage] = useState('')
-  const [newEvent, setNewEvent] = useState<EventRecord>({
-    recordId: '',
-    id: 'EVT-2026-004',
-    title: 'STEM Holiday Robotics Camp',
-    type: 'VEX IQ workshop',
-    location: 'Training Lab 1',
-    start: '2026-06-24',
-    startTime: '09:00',
-    end: '2026-06-26',
-    endTime: '17:00',
-    assignedEmployees: [],
-    status: 'Draft',
-    reservations: templates['VEX IQ workshop'],
-    packingProgress: {},
-    packedAssetIds: {},
-    checkoutApproved: false,
-  })
+  const [newEvent, setNewEvent] = useState<EventRecord>(() => createEventDraft([]))
   const [assetReturnLines, setAssetReturnLines] = useState<Record<string, AssetReturnLine>>({})
   const [checkoutMessage, setCheckoutMessage] = useState('')
   const [userManagementMessage, setUserManagementMessage] = useState('')
@@ -526,6 +552,11 @@ function App() {
       : navItems
   const assignedEvents = events.filter((event) => event.assignedEmployees.includes(currentStaff.name))
   const visibleEvents = portalMode === 'employee' ? assignedEvents : events
+  const returnEligibleEvents = visibleEvents.filter((event) =>
+    portalMode === 'employee'
+      ? event.status === 'Checked Out' || event.status === 'Returned'
+      : event.status === 'Returned' || event.status === 'Closed',
+  )
   const selectedEvent =
     visibleEvents.find(
       (event) => event.recordId === selectedEventId || event.id === selectedEventId,
@@ -536,8 +567,34 @@ function App() {
         ? reservation.selectedAssetIds
         : [reservation.itemId + ':untracked'],
     ) ?? []
+  const selectedEventInvalidAssetIds = selectedEvent?.status === 'Reserved'
+    ? selectedEvent.reservations.flatMap((reservation) => {
+        const item = inventoryById[reservation.itemId]
+        const usedElsewhere = new Set(
+          usedAssetIdsForItem(
+            events.filter((event) => event.recordId !== selectedEvent.recordId),
+            reservation.itemId,
+            selectedEvent.start,
+            selectedEvent.end,
+          ),
+        )
+        return reservation.selectedAssetIds.filter(
+          (assetId, index, assetIds) =>
+            !item?.assetIds.includes(assetId) ||
+            Boolean(item?.assetConditions?.[assetId]) ||
+            usedElsewhere.has(assetId) ||
+            assetIds.indexOf(assetId) !== index,
+        )
+      })
+    : []
+  const selectedEventAssetsValid =
+    selectedEventAssets.length > 0 && selectedEventInvalidAssetIds.length === 0
+  const selectedEventScheduleValid = selectedEvent
+    ? new Date(`${selectedEvent.start}T${selectedEvent.startTime}`).getTime() <
+      new Date(`${selectedEvent.end}T${selectedEvent.endTime}`).getTime()
+    : true
   const selectedEventAllPacked =
-    selectedEventAssets.length > 0 &&
+    selectedEventAssetsValid &&
     selectedEventAssets.every((assetId) => selectedEvent?.packedAssetIds[assetId])
   const selectedEventEditMode = selectedEvent?.recordId === editingPackingEventId
   const selectedEventPackingTotal = selectedEventAssets.length
@@ -612,6 +669,11 @@ function App() {
     }
   }, [loadAuthProfile, refreshProfiles])
 
+  useEffect(() => {
+    if (!supabase) return
+    supabase.rpc('has_employer').then(({ data }) => setEmployerSetupComplete(Boolean(data)))
+  }, [])
+
   const refreshOperationalData = useCallback(async () => {
     if (!supabase || !authenticatedUser) return
     try {
@@ -626,6 +688,11 @@ function App() {
       })
       setInventory(loadedInventory)
       setEvents(loadedEvents)
+      setNewEvent((draft) =>
+        loadedEvents.some((event) => event.id === draft.id)
+          ? { ...draft, id: nextEventCode(loadedEvents) }
+          : draft,
+      )
       setNotifications(snapshot.notifications)
       setAuditLogs(snapshot.auditLogs)
       setOperationalDataReadyFor(authenticatedUser.id)
@@ -665,6 +732,7 @@ function App() {
 
   useEffect(() => {
     if (!authenticatedUser || operationalDataReadyFor !== authenticatedUser.id || !supabase) return
+    if (selectedEventInvalidAssetIds.length > 0 || !selectedEventScheduleValid) return
     const client = supabase
     const snapshot = { inventory, events, notifications, auditLogs }
     const serializedSnapshot = JSON.stringify(snapshot)
@@ -677,7 +745,7 @@ function App() {
       })
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [operationalDataReadyFor, authenticatedUser, inventory, events, notifications, auditLogs])
+  }, [operationalDataReadyFor, authenticatedUser, inventory, events, notifications, auditLogs, selectedEventInvalidAssetIds.length, selectedEventScheduleValid])
 
   const handleLogin = async () => {
     if (!supabase) {
@@ -736,6 +804,10 @@ function App() {
     const name = registerName.trim()
     const email = registerEmail.trim().toLowerCase()
     const password = registerPassword
+    if (registerPortal === 'employer' && employerSetupComplete) {
+      setRegisterError('Employer setup is complete. Ask the current employer to promote your employee account.')
+      return
+    }
     if (!name || !email) {
       setRegisterError('Enter a name and email address.')
       return
@@ -755,6 +827,7 @@ function App() {
       setRegisterError(error.message)
       return
     }
+    if (registerPortal === 'employer') setEmployerSetupComplete(true)
 
     setRegisterName('')
     setRegisterEmail('')
@@ -766,6 +839,7 @@ function App() {
         setAuthenticatedUser(profile)
         setCurrentStaff({ name: profile.name, role: profile.role })
         void refreshProfiles(profile)
+        if (profile.portal === 'employer') setEmployerSetupComplete(true)
       }
     } else {
       setRegisterSuccess('Account created. Check your email to confirm it before logging in.')
@@ -844,12 +918,21 @@ function App() {
   })
 
   const hasShortage = plannerLines.some((line) => line.shortage > 0)
+  const eventIdAlreadyExists = events.some(
+    (event) => event.id.toLowerCase() === newEvent.id.trim().toLowerCase(),
+  )
   const eventTimesValid =
     new Date(newEvent.start + 'T' + newEvent.startTime).getTime() <
     new Date(newEvent.end + 'T' + newEvent.endTime).getTime()
   const plannerStepValid =
     plannerStep === 1
-      ? Boolean(newEvent.title.trim() && newEvent.id.trim() && newEvent.location.trim() && eventTimesValid)
+      ? Boolean(
+          newEvent.title.trim() &&
+          newEvent.id.trim() &&
+          !eventIdAlreadyExists &&
+          newEvent.location.trim() &&
+          eventTimesValid,
+        )
       : plannerStep === 2
         ? newEvent.assignedEmployees.length > 0
         : plannerStep === 3
@@ -869,6 +952,7 @@ function App() {
     return matchesSearch && matchesStatus && matchesStaff
   })
 
+  const today = todayInputValue()
   const dashboardStats = {
     usable: inventory.reduce((total, item) => total + getUsable(item), 0),
     reserved: activeEvents
@@ -878,7 +962,7 @@ function App() {
       (total, item) => total + item.damaged + item.missing,
       0,
     ),
-    upcoming: visibleEvents.filter((event) => dateValue(event.start) >= dateValue('2026-06-02')).length,
+    upcoming: visibleEvents.filter((event) => dateValue(event.start) >= dateValue(today)).length,
   }
   const profileEvents = portalMode === 'employee' ? assignedEvents : events
   const profileActiveEvents = profileEvents.filter((event) => event.status !== 'Closed')
@@ -901,7 +985,7 @@ function App() {
     const matchesSearch = `${item.name} ${item.category} ${item.location} ${item.assetIds.join(' ')} ${Object.keys(item.assetConditions ?? {}).join(' ')}`
       .toLowerCase()
       .includes(inventorySearch.toLowerCase())
-    const reserved = reservedQuantity(item.id, '2026-06-02', '2026-12-31')
+    const reserved = reservedQuantity(item.id, today, '2099-12-31')
     const usable = getUsable(item)
     const matchesFilter =
       inventoryFilter === 'All' ||
@@ -1394,10 +1478,33 @@ function App() {
     addLog('Deleted user', accountName + ' was removed from the system.')
   }
 
+  const promoteAccount = async (accountName: string) => {
+    const account = accounts.find((record) => record.name === accountName)
+    if (!account || !supabase || account.portal === 'employer') return
+    const { error } = await supabase
+      .from('profiles')
+      .update({ portal: 'employer', role: 'Employer' })
+      .eq('id', account.id)
+    if (error) {
+      setUserManagementMessage(error.message)
+      return
+    }
+    setAccounts((records) =>
+      records.map((record) =>
+        record.id === account.id
+          ? { ...record, portal: 'employer', role: 'Employer' }
+          : record,
+      ),
+    )
+    setUserManagementMessage(`${account.name} can now use the employer portal.`)
+    addLog('Promoted user', `${account.name} was promoted to employer.`)
+  }
+
   const confirmEvent = () => {
     if (
       portalMode !== 'employer' ||
       hasShortage ||
+      eventIdAlreadyExists ||
       !eventTimesValid ||
       !newEvent.title.trim() ||
       !newEvent.id.trim() ||
@@ -1452,6 +1559,7 @@ function App() {
       'Confirmed reservation and assigned staff',
       `${eventToAdd.id} assigned to ${eventToAdd.assignedEmployees.join(', ') || 'no employees'} at ${eventToAdd.location}.`,
     )
+    setNewEvent(createEventDraft([...events, eventToAdd]))
   }
 
   const markAllPackingChecks = (eventId: string) => {
@@ -1930,6 +2038,7 @@ function App() {
               <div className="login-role-switcher">
                 <button
                   className={registerPortal === 'employer' ? 'active' : ''}
+                  disabled={employerSetupComplete}
                   onClick={() => {
                     setRegisterPortal('employer')
                     setRegisterError('')
@@ -1937,7 +2046,7 @@ function App() {
                   type="button"
                 >
                   <Building2 size={17} aria-hidden="true" />
-                  New employer
+                  {employerSetupComplete ? 'Employer set up' : 'First employer'}
                 </button>
                 <button
                   className={registerPortal === 'employee' ? 'active' : ''}
@@ -1951,6 +2060,11 @@ function App() {
                   New employee
                 </button>
               </div>
+              {employerSetupComplete && (
+                <p className="login-helper">
+                  New users register as employees. An employer can promote them from Home.
+                </p>
+              )}
 
               <label>
                 Name
@@ -2057,12 +2171,6 @@ function App() {
                 className={activeTab === item.id ? 'active' : ''}
                 key={item.id}
                 onClick={() => selectNavTab(item.id)}
-                onPointerDown={(event) => {
-                  if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                    event.preventDefault()
-                    selectNavTab(item.id)
-                  }
-                }}
                 type="button"
                 title={item.label}
               >
@@ -2089,7 +2197,7 @@ function App() {
         <header className="topbar">
           <div>
             <span className="eyebrow premium-pill">Future Ready Inventory</span>
-            <h1>Educational and robotics event inventory</h1>
+            <h1>Event inventory</h1>
           </div>
           <div className="top-actions">
             <div className="notification-pill">
@@ -2115,7 +2223,7 @@ function App() {
             <section className="home-welcome">
               <div>
                 <span className="eyebrow">{portalMode === 'employee' ? 'My workspace' : 'Employer workspace'}</span>
-                <h2>{portalMode === 'employee' ? 'Todays tasks' : 'What needs attention'}</h2>
+                <h2>{portalMode === 'employee' ? "Today's tasks" : 'What needs attention'}</h2>
                 <p>
                   {portalMode === 'employee'
                     ? 'Open an assigned event to continue packing or returns.'
@@ -2215,7 +2323,14 @@ function App() {
                     return (
                       <div className="user-row" key={account.name}>
                         <div><strong>{account.name}</strong><span>{account.role}</span></div>
-                        <button disabled={cannotDelete} onClick={() => deleteAccount(account.name)} type="button"><Trash2 size={17} aria-hidden="true" />Delete</button>
+                        <div className="user-row-actions">
+                          {account.portal === 'employee' && (
+                            <button className="promote-user" onClick={() => promoteAccount(account.name)} type="button">
+                              <ShieldCheck size={17} aria-hidden="true" />Make employer
+                            </button>
+                          )}
+                          <button disabled={cannotDelete} onClick={() => deleteAccount(account.name)} type="button"><Trash2 size={17} aria-hidden="true" />Delete</button>
+                        </div>
                       </div>
                     )
                   })}
@@ -2497,9 +2612,25 @@ function App() {
                       Event ID
                       <input value={newEvent.id} onChange={(event) => setNewEvent((record) => ({ ...record, id: event.target.value }))} />
                     </label>
+                    {eventIdAlreadyExists && (
+                      <p className="form-error full-field">This event ID is already in use.</p>
+                    )}
                     <label>
                       Event type
-                      <input list="event-type-options" value={newEvent.type} onChange={(event) => setNewEvent((record) => ({ ...record, type: event.target.value }))} />
+                      <input
+                        list="event-type-options"
+                        value={newEvent.type}
+                        onChange={(event) => {
+                          const type = event.target.value
+                          setNewEvent((record) => ({
+                            ...record,
+                            type,
+                            reservations: templates[type]
+                              ? templates[type].map((reservation) => ({ ...reservation }))
+                              : record.reservations,
+                          }))
+                        }}
+                      />
                       <datalist id="event-type-options">
                         {Object.keys(templates).map((template) => <option key={template} value={template} />)}
                       </datalist>
@@ -2743,6 +2874,11 @@ function App() {
                       <span style={{ width: `${selectedEventPackingPercent}%` }} />
                     </div>
                   </div>
+                  {selectedEventInvalidAssetIds.length > 0 && (
+                    <p className="form-error asset-assignment-warning">
+                      Fix unavailable or duplicate item IDs before marking this event ready.
+                    </p>
+                  )}
                   {portalMode === 'employee' && selectedEvent.status === 'Reserved' && (
                       <button className="secondary-action bulk-action" onClick={() => markAllPackingChecks(selectedEvent.recordId)} type="button">
                         <CheckCircle2 size={17} aria-hidden="true" />
@@ -2815,6 +2951,9 @@ function App() {
                           />
                         </label>
                       </div>
+                      {!selectedEventScheduleValid && (
+                        <p className="form-error">The event must end after it starts.</p>
+                      )}
                       <label className="packing-add-item">
                         Add item
                         <select
@@ -2862,7 +3001,10 @@ function App() {
                           </div>
                           <div className="asset-checklist">
                             {(reservation.selectedAssetIds.length ? reservation.selectedAssetIds : [reservation.itemId + ':untracked']).map((assetId, assetIndex) => (
-                              <div className={'asset-check-row ' + (portalMode === 'employer' ? 'employer-view' : 'employee-view')} key={assetId + assetIndex}>
+                              <div
+                                className={'asset-check-row ' + (portalMode === 'employer' ? 'employer-view' : 'employee-view') + (selectedEventInvalidAssetIds.includes(assetId) ? ' invalid' : '')}
+                                key={assetId + assetIndex}
+                              >
                                 {portalMode === 'employee' && (
                                   <input aria-label={'Pack ' + assetId} checked={selectedEvent.packedAssetIds[assetId] ?? false} disabled={selectedEvent.status !== 'Reserved'} type="checkbox" onChange={(event) => togglePackedAsset(selectedEvent.recordId, reservation.itemId, assetId, event.target.checked)} />
                                 )}
@@ -2870,12 +3012,14 @@ function App() {
                                   portalMode === 'employer' && !selectedEventEditMode ? (
                                     <strong className="asset-list-id">{assetId}</strong>
                                   ) : (
-                                    <input aria-label={item.name + ' asset ID ' + (assetIndex + 1)} className="asset-id-input" disabled={selectedEvent.status !== 'Reserved'} value={assetId} onChange={(event) => updateAssignedAssetId(selectedEvent.recordId, reservation.itemId, assetIndex, event.target.value)} />
+                                    <input aria-invalid={selectedEventInvalidAssetIds.includes(assetId)} aria-label={item.name + ' asset ID ' + (assetIndex + 1)} className="asset-id-input" disabled={selectedEvent.status !== 'Reserved'} value={assetId} onChange={(event) => updateAssignedAssetId(selectedEvent.recordId, reservation.itemId, assetIndex, event.target.value)} />
                                   )
                                 ) : (
                                   <span className="asset-id-summary">Untracked item</span>
                                 )}
-                                <Badge tone={assetJourneyTone(assetJourneyStatus(selectedEvent, assetId))}>{assetJourneyStatus(selectedEvent, assetId)}</Badge>
+                                <Badge tone={selectedEventInvalidAssetIds.includes(assetId) ? 'danger' : assetJourneyTone(assetJourneyStatus(selectedEvent, assetId))}>
+                                  {selectedEventInvalidAssetIds.includes(assetId) ? 'Unavailable' : assetJourneyStatus(selectedEvent, assetId)}
+                                </Badge>
                               </div>
                             ))}
                           </div>
@@ -3078,7 +3222,7 @@ function App() {
                     </label>
                     <strong>{getUsable(item)} usable</strong>
                   </div>
-                  <span>{reservedQuantity(item.id, '2026-06-02', '2026-12-31')}</span>
+                  <span>{reservedQuantity(item.id, today, '2099-12-31')}</span>
                   <div className="issue-summary" aria-label="Asset issue totals">
                     <div><span>Damaged</span><strong>{item.damaged}</strong></div>
                     <div><span>Missing</span><strong>{item.missing}</strong></div>
@@ -3138,7 +3282,7 @@ function App() {
                   setAssetReturnLines({})
                 }}
               >
-                {visibleEvents.map((event) => (
+                {returnEligibleEvents.map((event) => (
                   <option key={event.recordId} value={event.recordId}>
                     {event.title}
                   </option>
