@@ -1703,6 +1703,10 @@ button:focus-visible {
   color: #007aff;
 }
 
+.sync-indicator.editing {
+  color: #ff9500;
+}
+
 .sync-indicator.error {
   color: #d92d20;
 }

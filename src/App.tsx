@@ -510,7 +510,7 @@ function App() {
   const lastServerSnapshot = useRef('')
   const lastInventorySnapshot = useRef('')
   const inventoryDirty = useRef(false)
-  const [inventorySyncStatus, setInventorySyncStatus] = useState<'saved' | 'saving' | 'error'>('saved')
+  const [inventorySyncStatus, setInventorySyncStatus] = useState<'saved' | 'editing' | 'saving' | 'error'>('saved')
   const [themeMode, setThemeMode] = useStoredState<'light' | 'dark'>('themeMode', 'light')
   const [currentStaff, setCurrentStaff] = useState<StaffUser>({
     name: '',
@@ -530,6 +530,7 @@ function App() {
   const [newInventoryUnit, setNewInventoryUnit] = useState('unit')
   const [inventoryFormError, setInventoryFormError] = useState('')
   const [inventoryQuantityError, setInventoryQuantityError] = useState('')
+  const [inventoryTotalDrafts, setInventoryTotalDrafts] = useState<Record<string, string>>({})
   const [profileSettingsOpen, setProfileSettingsOpen] = useState(false)
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
   const [newPasswordInput, setNewPasswordInput] = useState('')
@@ -1408,6 +1409,41 @@ function App() {
         }
       }),
     )
+  }
+
+  const commitInventoryTotal = (item: InventoryItem) => {
+    const draft = inventoryTotalDrafts[item.id]
+    if (draft === undefined) return
+    if (!draft.trim()) {
+      setInventoryQuantityError('Enter a whole-number total.')
+      setInventoryTotalDrafts((records) => {
+        const next = { ...records }
+        delete next[item.id]
+        return next
+      })
+      setInventorySyncStatus('saved')
+      return
+    }
+    const quantity = parseWholeNumber(draft)
+    if (quantity === null) {
+      setInventoryQuantityError('Inventory totals must use whole numbers only.')
+      return
+    }
+    if (quantity === item.total) {
+      setInventoryTotalDrafts((records) => {
+        const next = { ...records }
+        delete next[item.id]
+        return next
+      })
+      setInventorySyncStatus('saved')
+      return
+    }
+    updateInventoryItem(item.id, 'total', quantity)
+    setInventoryTotalDrafts((records) => {
+      const next = { ...records }
+      delete next[item.id]
+      return next
+    })
   }
 
   const updateNewInventoryTotal = (value: string) => {
@@ -3257,6 +3293,8 @@ function App() {
                 <span className={`sync-indicator ${inventorySyncStatus}`}>
                   {inventorySyncStatus === 'saving'
                     ? 'Saving...'
+                    : inventorySyncStatus === 'editing'
+                      ? 'Unsaved change'
                     : inventorySyncStatus === 'error'
                       ? 'Save failed'
                       : 'All changes saved'}
@@ -3284,6 +3322,10 @@ function App() {
               ))}
             </div>
 
+            {inventoryQuantityError && (
+              <p className="form-error quantity-warning">{inventoryQuantityError}</p>
+            )}
+
             <details className="add-inventory-panel">
               <summary>
                 <Plus size={17} aria-hidden="true" />
@@ -3291,10 +3333,6 @@ function App() {
               </summary>
               <div className="add-inventory-content">
                 <p>Add future equipment such as new kits, tablets, or teaching materials.</p>
-
-                {inventoryQuantityError && (
-                  <p className="form-error quantity-warning">{inventoryQuantityError}</p>
-                )}
 
                 <div className="add-inventory-grid">
                   <label>
@@ -3370,17 +3408,23 @@ function App() {
                       Total
                       <input
                         inputMode="numeric"
-                        min={0}
                         pattern="[0-9]*"
-                        step={1}
-                        type="number"
-                        value={item.total}
-                        onBlur={(event) => {
-                          event.currentTarget.value = String(item.total)
+                        type="text"
+                        value={inventoryTotalDrafts[item.id] ?? String(item.total)}
+                        onBlur={() => commitInventoryTotal(item)}
+                        onChange={(event) => {
+                          const value = event.target.value
+                          if (!/^\d*$/.test(value)) {
+                            setInventoryQuantityError('Inventory totals must use whole numbers only.')
+                            return
+                          }
+                          setInventoryQuantityError('')
+                          setInventorySyncStatus('editing')
+                          setInventoryTotalDrafts((records) => ({ ...records, [item.id]: value }))
                         }}
-                        onChange={(event) =>
-                          updateInventoryItem(item.id, 'total', event.target.value)
-                        }
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.currentTarget.blur()
+                        }}
                       />
                     </label>
                     <strong>{getUsable(item)} usable</strong>
