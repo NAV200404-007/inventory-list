@@ -532,6 +532,8 @@ function App() {
   const [newPasswordInput, setNewPasswordInput] = useState('')
   const [settingsMessage, setSettingsMessage] = useState('')
   const [deleteAccountMessage, setDeleteAccountMessage] = useState('')
+  const [profileNameInput, setProfileNameInput] = useState('')
+  const [profileNameMessage, setProfileNameMessage] = useState('')
   const [newEvent, setNewEvent] = useState<EventRecord>(() => createEventDraft([]))
   const [assetReturnLines, setAssetReturnLines] = useState<Record<string, AssetReturnLine>>({})
   const [checkoutMessage, setCheckoutMessage] = useState('')
@@ -652,6 +654,7 @@ function App() {
         if (profile) {
           setAuthenticatedUser(profile)
           setCurrentStaff({ name: profile.name, role: profile.role })
+          setProfileNameInput(profile.name)
           void refreshProfiles(profile)
         }
       }
@@ -715,6 +718,7 @@ function App() {
 
     const channel = supabase
       .channel('operational-data')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_items' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_assets' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, scheduleRefresh)
@@ -784,6 +788,7 @@ function App() {
 
     setAuthenticatedUser(profile)
     setCurrentStaff({ name: profile.name, role: profile.role })
+    setProfileNameInput(profile.name)
     void refreshProfiles(profile)
     setActiveTab('dashboard')
     setLoginPassword('')
@@ -839,6 +844,7 @@ function App() {
       if (profile) {
         setAuthenticatedUser(profile)
         setCurrentStaff({ name: profile.name, role: profile.role })
+        setProfileNameInput(profile.name)
         void refreshProfiles(profile)
         if (profile.portal === 'employer') setEmployerSetupComplete(true)
       }
@@ -1832,6 +1838,50 @@ function App() {
     addLog('Changed password', authenticatedUser.name + ' updated their password.')
   }
 
+  const updateProfileName = async () => {
+    if (!authenticatedUser || !supabase) return
+    const name = profileNameInput.trim()
+    if (name.length < 2 || name.length > 80) {
+      setProfileNameMessage('Name must be between 2 and 80 characters.')
+      return
+    }
+
+    const previousName = currentStaff.name
+    const { error } = await supabase.rpc('update_own_profile_name', { new_name: name })
+    if (error) {
+      setProfileNameMessage(error.message)
+      return
+    }
+
+    setCurrentStaff((staff) => ({ ...staff, name }))
+    setAuthenticatedUser((user) => (user ? { ...user, name } : user))
+    setAccounts((records) =>
+      records.map((account) =>
+        account.id === authenticatedUser.id ? { ...account, name } : account,
+      ),
+    )
+    setEvents((records) =>
+      records.map((event) => ({
+        ...event,
+        assignedEmployees: event.assignedEmployees.map((employee) =>
+          employee === previousName ? name : employee,
+        ),
+        packedBy: event.packedBy === previousName ? name : event.packedBy,
+        checkedOutBy: event.checkedOutBy === previousName ? name : event.checkedOutBy,
+        returnReportBy: event.returnReportBy === previousName ? name : event.returnReportBy,
+      })),
+    )
+    setNotifications((records) =>
+      records.map((notification) =>
+        notification.staff === previousName ? { ...notification, staff: name } : notification,
+      ),
+    )
+    setAuditLogs((records) =>
+      records.map((log) => (log.staff === previousName ? { ...log, staff: name } : log)),
+    )
+    setProfileNameMessage('Name updated.')
+  }
+
   const deleteOwnAccount = async () => {
     if (!authenticatedUser || !supabase) return
     const confirmed = window.confirm(
@@ -2500,7 +2550,30 @@ function App() {
                 <dl className="profile-detail-list">
                   <div>
                     <dt>Name</dt>
-                    <dd>{currentStaff.name}</dd>
+                    <dd className="profile-name-editor">
+                      <input
+                        aria-label="Profile name"
+                        maxLength={80}
+                        placeholder={currentStaff.name}
+                        value={profileNameInput}
+                        onChange={(event) => {
+                          setProfileNameInput(event.target.value)
+                          setProfileNameMessage('')
+                        }}
+                      />
+                      <button
+                        disabled={!profileNameInput.trim() || profileNameInput.trim() === currentStaff.name}
+                        onClick={updateProfileName}
+                        type="button"
+                      >
+                        Save
+                      </button>
+                      {profileNameMessage && (
+                        <span className={profileNameMessage === 'Name updated.' ? 'inline-success' : 'form-error'}>
+                          {profileNameMessage}
+                        </span>
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>Role</dt>

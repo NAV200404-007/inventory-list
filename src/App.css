@@ -4544,6 +4544,38 @@ button:not(:disabled):active,
   background: rgba(255, 59, 48, 0.05);
 }
 
+.profile-name-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: min(100%, 420px);
+}
+
+.profile-name-editor input {
+  width: 100%;
+  min-width: 0;
+}
+
+.profile-name-editor button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 11px;
+  background: #007aff;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.profile-name-editor button:disabled {
+  background: #d9e2ec;
+  color: #7b8794;
+}
+
+.profile-name-editor > span {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .settings-danger > div {
   display: grid;
   gap: 4px;
@@ -4686,6 +4718,14 @@ button:not(:disabled):active,
   }
 
   .delete-account-button {
+    width: 100%;
+  }
+
+  .profile-name-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-name-editor button {
     width: 100%;
   }
 }
