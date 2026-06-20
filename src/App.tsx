@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   ArrowLeft,
   BarChart3,
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import './App.css'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { loadOperationalData, syncOperationalData } from './lib/operationalData'
 
 type InventoryStatus =
   | 'Available'
@@ -155,7 +156,11 @@ function normalizeEventStatus(status: string): EventStatus {
 }
 
 function createEventRecordId() {
-  return `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return crypto.randomUUID()
+}
+
+function createRecordId() {
+  return crypto.randomUUID()
 }
 
 function normalizeEventRecord(event: EventRecord & { staff?: string; recordId?: string }) {
@@ -455,10 +460,12 @@ function App() {
   const [registerError, setRegisterError] = useState('')
   const [registerSuccess, setRegisterSuccess] = useState('')
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
-  const [inventory, setInventory] = useStoredState('inventory', initialInventory)
-  const [events, setEvents] = useStoredState('events', initialEvents)
-  const [auditLogs, setAuditLogs] = useStoredState('auditLogs', initialAudit)
-  const [notifications, setNotifications] = useStoredState('notifications', initialNotifications)
+  const [inventory, setInventory] = useState<InventoryItem[]>(initialInventory)
+  const [events, setEvents] = useState<EventRecord[]>(initialEvents)
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAudit)
+  const [notifications, setNotifications] = useState<NotificationRecord[]>(initialNotifications)
+  const [operationalDataReadyFor, setOperationalDataReadyFor] = useState('')
+  const lastServerSnapshot = useRef('')
   const [themeMode, setThemeMode] = useStoredState<'light' | 'dark'>('themeMode', 'light')
   const [currentStaff, setCurrentStaff] = useState<StaffUser>({
     name: '',
@@ -605,6 +612,73 @@ function App() {
     }
   }, [loadAuthProfile, refreshProfiles])
 
+  const refreshOperationalData = useCallback(async () => {
+    if (!supabase || !authenticatedUser) return
+    try {
+      const snapshot = await loadOperationalData(supabase)
+      const loadedInventory = snapshot.inventory.length > 0 ? snapshot.inventory : initialInventory
+      const loadedEvents = snapshot.events.map((event) => normalizeEventRecord(event as EventRecord))
+      lastServerSnapshot.current = JSON.stringify({
+        inventory: snapshot.inventory,
+        events: loadedEvents,
+        notifications: snapshot.notifications,
+        auditLogs: snapshot.auditLogs,
+      })
+      setInventory(loadedInventory)
+      setEvents(loadedEvents)
+      setNotifications(snapshot.notifications)
+      setAuditLogs(snapshot.auditLogs)
+      setOperationalDataReadyFor(authenticatedUser.id)
+    } catch (error) {
+      console.error('Unable to load shared operational data', error)
+    }
+  }, [authenticatedUser])
+
+  useEffect(() => {
+    if (!authenticatedUser || !supabase) {
+      return
+    }
+    const initialRefresh = window.setTimeout(() => void refreshOperationalData(), 0)
+    let realtimeRefresh = 0
+    const scheduleRefresh = () => {
+      window.clearTimeout(realtimeRefresh)
+      realtimeRefresh = window.setTimeout(() => void refreshOperationalData(), 300)
+    }
+
+    const channel = supabase
+      .channel('operational-data')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_items' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_assets' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_staff' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_requirements' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_assets' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, scheduleRefresh)
+      .subscribe()
+    return () => {
+      window.clearTimeout(initialRefresh)
+      window.clearTimeout(realtimeRefresh)
+      void supabase?.removeChannel(channel)
+    }
+  }, [authenticatedUser, refreshOperationalData])
+
+  useEffect(() => {
+    if (!authenticatedUser || operationalDataReadyFor !== authenticatedUser.id || !supabase) return
+    const client = supabase
+    const snapshot = { inventory, events, notifications, auditLogs }
+    const serializedSnapshot = JSON.stringify(snapshot)
+    if (serializedSnapshot === lastServerSnapshot.current) return
+    const timer = window.setTimeout(() => {
+      lastServerSnapshot.current = serializedSnapshot
+      void syncOperationalData(client, authenticatedUser, snapshot).catch((error) => {
+        lastServerSnapshot.current = ''
+        console.error('Unable to save shared operational data', error)
+      })
+    }, 700)
+    return () => window.clearTimeout(timer)
+  }, [operationalDataReadyFor, authenticatedUser, inventory, events, notifications, auditLogs])
+
   const handleLogin = async () => {
     if (!supabase) {
       setLoginError('Supabase is not configured.')
@@ -702,6 +776,7 @@ function App() {
 
   const handleLogout = async () => {
     if (supabase) await supabase.auth.signOut()
+    setOperationalDataReadyFor('')
     setAuthenticatedUser(null)
     setAccounts([])
     setLoginPortal(portalMode)
@@ -720,7 +795,7 @@ function App() {
 
     setAuditLogs((logs) => [
       {
-        id: `log-${Date.now()}`,
+        id: createRecordId(),
         staff: currentStaff.name,
         action,
         detail,
@@ -904,7 +979,7 @@ function App() {
     if (targetEvent && !wasAssigned) {
       setNotifications((records) => [
         {
-          id: `note-${Date.now()}-reassign`,
+          id: createRecordId(),
           staff: employeeName,
           eventId: targetEvent.recordId,
           title: `Assigned: ${targetEvent.title}`,
@@ -976,6 +1051,10 @@ function App() {
 
   const updateInventoryAssetId = (itemId: string, assetIndex: number, value: string) => {
     const nextId = value.trim().toUpperCase()
+    const previousId = inventory.find((item) => item.id === itemId)?.assetIds[assetIndex]
+    if (supabase && previousId && nextId && previousId !== nextId) {
+      void supabase.from('inventory_assets').update({ asset_code: nextId }).eq('asset_code', previousId)
+    }
     setInventory((items) =>
       items.map((item) => {
         if (item.id !== itemId) return item
@@ -1274,6 +1353,7 @@ function App() {
     }
 
     setEvents((records) => records.filter((event) => event.recordId !== eventId))
+    if (supabase) void supabase.from('events').delete().eq('id', eventId)
     setNotifications((records) =>
       records.filter(
         (notification) =>
@@ -1353,8 +1433,8 @@ function App() {
       packingProgress: {},
       packedAssetIds: {},
     }
-    const assignedNotifications = eventToAdd.assignedEmployees.map((employeeName, index) => ({
-      id: `note-${Date.now()}-${index}`,
+    const assignedNotifications = eventToAdd.assignedEmployees.map((employeeName) => ({
+      id: createRecordId(),
       staff: employeeName,
       eventId: eventToAdd.recordId,
       title: `Assigned: ${eventToAdd.title}`,
@@ -1449,8 +1529,8 @@ function App() {
 
     const employerNotifications = accounts
       .filter((account) => account.portal === 'employer')
-      .map((account, index) => ({
-        id: `note-${Date.now()}-${index}`,
+      .map((account) => ({
+        id: createRecordId(),
         staff: account.name,
         eventId: event.recordId,
         title: `Packed and ready: ${event.title}`,
@@ -1489,8 +1569,8 @@ function App() {
   const approveCheckoutEvent = (eventId: string) => {
     const event = events.find((record) => record.recordId === eventId)
     if (!event || portalMode !== 'employer' || event.status !== 'Packed') return
-    const employeeNotifications = event.assignedEmployees.map((employeeName, index) => ({
-      id: 'note-' + Date.now() + '-checkout-' + index,
+    const employeeNotifications = event.assignedEmployees.map((employeeName) => ({
+      id: createRecordId(),
       staff: employeeName,
       eventId: event.recordId,
       title: 'Checkout approved: ' + event.title,
@@ -1518,8 +1598,8 @@ function App() {
       ).every((assetId) => event.packedAssetIds[assetId])
     ) return
 
-    const employerNotifications = accounts.filter((account) => account.portal === 'employer').map((account, index) => ({
-      id: 'note-' + Date.now() + '-checked-out-' + index,
+    const employerNotifications = accounts.filter((account) => account.portal === 'employer').map((account) => ({
+      id: createRecordId(),
       staff: account.name,
       eventId: event.recordId,
       title: 'Items checked out: ' + event.title,
@@ -1573,8 +1653,8 @@ function App() {
 
     const employerNotifications = accounts
       .filter((account) => account.portal === 'employer')
-      .map((account, index) => ({
-        id: `note-${Date.now()}-return-${index}`,
+      .map((account) => ({
+        id: createRecordId(),
         staff: account.name,
         eventId: selectedEvent.recordId,
         title: `Return report ready: ${selectedEvent.title}`,
@@ -1926,7 +2006,7 @@ function App() {
 
           <div className="login-hint">
             <strong>For testing:</strong>
-            <span>Accounts are secured by Supabase. Shared inventory sync is being enabled next.</span>
+            <span>Accounts and shared inventory are securely synchronized through Supabase.</span>
           </div>
         </section>
       </main>

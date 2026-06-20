@@ -14,7 +14,7 @@ A web-based inventory management app for organizations running educational and r
 - Add new inventory types for future equipment needs.
 - Delete events and manage users from the employer dashboard.
 - Packing lists, return tracking, audit logs, and simple dashboard metrics.
-- Browser-local persistence using `localStorage` for real-life prototype testing.
+- Shared Supabase persistence for accounts, inventory, events, packing, returns, notifications, and audit history.
 
 ## Accounts
 
@@ -76,7 +76,7 @@ Previews the production build locally.
 
 ## Notes
 
-This is currently a frontend prototype. Data is saved in the browser using `localStorage`, so it is useful for real-life testing on one device but is not yet connected to a shared database or backend authentication system.
+This deployment uses Supabase Auth and Postgres. Operational records synchronize across employer and employee devices in real time. Only the visual theme preference remains in browser storage.
 
 For production use, the next steps would be:
 
