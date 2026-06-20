@@ -551,7 +551,7 @@ function App() {
   const employerCount = accounts.filter((account) => account.portal === 'employer').length
   const allowedNavItems =
     portalMode === 'employee'
-      ? navItems.filter((item) => item.id !== 'planner' && item.id !== 'inventory')
+      ? navItems.filter((item) => item.id !== 'planner')
       : navItems
   const assignedEvents = events.filter((event) => event.assignedEmployees.includes(currentStaff.name))
   const visibleEvents = portalMode === 'employee' ? assignedEvents : events
@@ -2639,12 +2639,10 @@ function App() {
                       Create event
                     </button>
                   )}
-                  {portalMode === 'employer' && (
-                    <button type="button" onClick={() => setActiveTab('inventory')}>
-                      <Boxes size={18} aria-hidden="true" />
-                      Manage inventory
-                    </button>
-                  )}
+                  <button type="button" onClick={() => setActiveTab('inventory')}>
+                    <Boxes size={18} aria-hidden="true" />
+                    Manage inventory
+                  </button>
                   <button type="button" onClick={() => setActiveTab('events')}>
                     <ClipboardList size={18} aria-hidden="true" />
                     {portalMode === 'employee' ? 'My events' : 'All events'}

@@ -237,7 +237,7 @@ export async function syncOperationalData(client: SupabaseClient, user: Operatio
   const profiles = (profileRows ?? []) as { id: string; name: string; portal: PortalMode }[]
   const profileId = new Map(profiles.map((profile) => [profile.name, profile.id]))
 
-  if (user.portal === 'employer' && snapshot.inventory.length) {
+  if (snapshot.inventory.length) {
     const { error } = await client.from('inventory_items').upsert(snapshot.inventory.map((item) => ({ id: item.id, name: item.name, category: item.category, unit: item.unit, location: item.location, total: item.total })))
     if (error) throw error
     const assetRows = snapshot.inventory.flatMap((item) => item.assetIds.filter(Boolean).map((assetCode) => {
