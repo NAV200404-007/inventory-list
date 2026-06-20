@@ -25,7 +25,7 @@ import {
 } from 'lucide-react'
 import './App.css'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { loadOperationalData, syncOperationalData } from './lib/operationalData'
+import { loadOperationalData, syncInventoryData, syncOperationalData } from './lib/operationalData'
 
 type InventoryStatus =
   | 'Available'
@@ -508,6 +508,9 @@ function App() {
   const [notifications, setNotifications] = useState<NotificationRecord[]>(initialNotifications)
   const [operationalDataReadyFor, setOperationalDataReadyFor] = useState('')
   const lastServerSnapshot = useRef('')
+  const lastInventorySnapshot = useRef('')
+  const inventoryDirty = useRef(false)
+  const [inventorySyncStatus, setInventorySyncStatus] = useState<'saved' | 'saving' | 'error'>('saved')
   const [themeMode, setThemeMode] = useStoredState<'light' | 'dark'>('themeMode', 'light')
   const [currentStaff, setCurrentStaff] = useState<StaffUser>({
     name: '',
@@ -685,12 +688,15 @@ function App() {
       const loadedInventory = snapshot.inventory.length > 0 ? snapshot.inventory : initialInventory
       const loadedEvents = snapshot.events.map((event) => normalizeEventRecord(event as EventRecord))
       lastServerSnapshot.current = JSON.stringify({
-        inventory: snapshot.inventory,
+        inventory: [],
         events: loadedEvents,
         notifications: snapshot.notifications,
         auditLogs: snapshot.auditLogs,
       })
-      setInventory(loadedInventory)
+      if (!inventoryDirty.current) {
+        lastInventorySnapshot.current = JSON.stringify(snapshot.inventory)
+        setInventory(loadedInventory)
+      }
       setEvents(loadedEvents)
       setNewEvent((draft) =>
         loadedEvents.some((event) => event.id === draft.id)
@@ -739,7 +745,7 @@ function App() {
     if (!authenticatedUser || operationalDataReadyFor !== authenticatedUser.id || !supabase) return
     if (selectedEventInvalidAssetIds.length > 0 || !selectedEventScheduleValid) return
     const client = supabase
-    const snapshot = { inventory, events, notifications, auditLogs }
+    const snapshot = { inventory: [], events, notifications, auditLogs }
     const serializedSnapshot = JSON.stringify(snapshot)
     if (serializedSnapshot === lastServerSnapshot.current) return
     const timer = window.setTimeout(() => {
@@ -750,7 +756,29 @@ function App() {
       })
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [operationalDataReadyFor, authenticatedUser, inventory, events, notifications, auditLogs, selectedEventInvalidAssetIds.length, selectedEventScheduleValid])
+  }, [operationalDataReadyFor, authenticatedUser, events, notifications, auditLogs, selectedEventInvalidAssetIds.length, selectedEventScheduleValid])
+
+  useEffect(() => {
+    if (!authenticatedUser || operationalDataReadyFor !== authenticatedUser.id || !supabase) return
+    const serializedInventory = JSON.stringify(inventory)
+    if (serializedInventory === lastInventorySnapshot.current) return
+    const client = supabase
+    const timer = window.setTimeout(() => {
+      setInventorySyncStatus('saving')
+      lastInventorySnapshot.current = serializedInventory
+      void syncInventoryData(client, inventory)
+        .then(() => {
+          inventoryDirty.current = false
+          setInventorySyncStatus('saved')
+        })
+        .catch((error) => {
+          lastInventorySnapshot.current = ''
+          setInventorySyncStatus('error')
+          console.error('Unable to save inventory', error)
+        })
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [operationalDataReadyFor, authenticatedUser, inventory])
 
   const handleLogin = async () => {
     if (!supabase) {
@@ -1141,11 +1169,9 @@ function App() {
   }
 
   const updateInventoryAssetId = (itemId: string, assetIndex: number, value: string) => {
+    inventoryDirty.current = true
+    setInventorySyncStatus('saving')
     const nextId = value.trim().toUpperCase()
-    const previousId = inventory.find((item) => item.id === itemId)?.assetIds[assetIndex]
-    if (supabase && previousId && nextId && previousId !== nextId) {
-      void supabase.from('inventory_assets').update({ asset_code: nextId }).eq('asset_code', previousId)
-    }
     setInventory((items) =>
       items.map((item) => {
         if (item.id !== itemId) return item
@@ -1167,6 +1193,8 @@ function App() {
     assetId: string,
     status: 'Available' | 'Damaged' | 'Missing',
   ) => {
+    inventoryDirty.current = true
+    setInventorySyncStatus('saving')
     setInventory((items) =>
       items.map((item) => {
         if (item.id !== itemId) return item
@@ -1203,6 +1231,8 @@ function App() {
   }
 
   const updateInventoryAssetRemarks = (itemId: string, assetId: string, remarks: string) => {
+    inventoryDirty.current = true
+    setInventorySyncStatus('saving')
     setInventory((items) =>
       items.map((item) => {
         const condition = item.assetConditions?.[assetId]
@@ -1219,6 +1249,8 @@ function App() {
   }
 
   const resolveAssetIssue = (itemId: string, assetId: string) => {
+    inventoryDirty.current = true
+    setInventorySyncStatus('saving')
     setInventory((items) =>
       items.map((item) => {
         if (item.id !== itemId) return item
@@ -1350,6 +1382,8 @@ function App() {
     }
 
     setInventoryQuantityError('')
+    inventoryDirty.current = true
+    setInventorySyncStatus('saving')
     setInventory((items) =>
       items.map((item) => {
         if (item.id !== itemId) {
@@ -1421,6 +1455,8 @@ function App() {
       assetIds: numberedIds(prefix, totalQuantity),
     }
 
+    inventoryDirty.current = true
+    setInventorySyncStatus('saving')
     setInventory((items) => [...items, itemToAdd])
     setNewInventoryName('')
     setNewInventoryPrefix('')
@@ -1909,6 +1945,8 @@ function App() {
       return
     }
 
+    inventoryDirty.current = true
+    setInventorySyncStatus('saving')
     setInventory((items) =>
       items.map((item) => {
         const line = selectedEvent.returnReport?.[item.id]
@@ -3213,16 +3251,25 @@ function App() {
             <div className="section-heading inventory-heading">
               <div>
                 <h2>Centralized inventory tracker</h2>
-                <p>Edit the total, damaged, and missing counts for each item.</p>
+                <p>Update stock totals, then manage exact item IDs only when needed.</p>
               </div>
-              <label className="search-box">
-                <Search size={17} aria-hidden="true" />
-                <input
-                  placeholder="Search inventory"
-                  value={inventorySearch}
-                  onChange={(event) => setInventorySearch(event.target.value)}
-                />
-              </label>
+              <div className="inventory-heading-actions">
+                <span className={`sync-indicator ${inventorySyncStatus}`}>
+                  {inventorySyncStatus === 'saving'
+                    ? 'Saving...'
+                    : inventorySyncStatus === 'error'
+                      ? 'Save failed'
+                      : 'All changes saved'}
+                </span>
+                <label className="search-box">
+                  <Search size={17} aria-hidden="true" />
+                  <input
+                    placeholder="Search inventory"
+                    value={inventorySearch}
+                    onChange={(event) => setInventorySearch(event.target.value)}
+                  />
+                </label>
+              </div>
             </div>
             <div className="segmented-filter" aria-label="Inventory filters">
               {(['All', 'Low stock', 'Issues'] as const).map((filter) => (
@@ -3328,6 +3375,9 @@ function App() {
                         step={1}
                         type="number"
                         value={item.total}
+                        onBlur={(event) => {
+                          event.currentTarget.value = String(item.total)
+                        }}
                         onChange={(event) =>
                           updateInventoryItem(item.id, 'total', event.target.value)
                         }
@@ -3335,7 +3385,10 @@ function App() {
                     </label>
                     <strong>{getUsable(item)} usable</strong>
                   </div>
-                  <span>{reservedQuantity(item.id, today, '2099-12-31')}</span>
+                  <div className="reserved-cell">
+                    <span>Reserved</span>
+                    <strong>{reservedQuantity(item.id, today, '2099-12-31')}</strong>
+                  </div>
                   <div className="issue-summary" aria-label="Asset issue totals">
                     <div><span>Damaged</span><strong>{item.damaged}</strong></div>
                     <div><span>Missing</span><strong>{item.missing}</strong></div>

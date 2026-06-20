@@ -78,6 +78,14 @@ export type OperationalSnapshot = {
   auditLogs: OperationalAuditLog[]
 }
 
+export async function syncInventoryData(
+  client: SupabaseClient,
+  inventory: OperationalInventoryItem[],
+) {
+  const { error } = await client.rpc('sync_inventory', { inventory_payload: inventory })
+  if (error) throw error
+}
+
 type ProfileRow = { id: string; name: string; role: Role; portal: PortalMode }
 type ItemRow = { id: string; name: string; category: string; unit: string; location: string; total: number }
 type AssetRow = {
@@ -240,41 +248,8 @@ export async function syncOperationalData(client: SupabaseClient, user: Operatio
   const profiles = (profileRows ?? []) as { id: string; name: string; portal: PortalMode }[]
   const profileId = new Map(profiles.map((profile) => [profile.name, profile.id]))
 
-  if (snapshot.inventory.length) {
-    const { error } = await client.from('inventory_items').upsert(snapshot.inventory.map((item) => ({ id: item.id, name: item.name, category: item.category, unit: item.unit, location: item.location, total: item.total })))
-    if (error) throw error
-    const assetRows = snapshot.inventory.flatMap((item) => item.assetIds.filter(Boolean).map((assetCode) => {
-      const condition = item.assetConditions?.[assetCode]
-      return { inventory_item_id: item.id, asset_code: assetCode, active: true, status: condition?.status ?? 'Available', issue_remarks: condition?.remarks ?? '', issue_event_id: null, issue_reported_by: condition ? user.id : null }
-    }))
-    if (assetRows.length) {
-      const { error: assetError } = await client.from('inventory_assets').upsert(assetRows, { onConflict: 'asset_code' })
-      if (assetError) throw assetError
-    }
-  }
-
   const { data: assetRows, error: assetError } = await client.from('inventory_assets').select('id,inventory_item_id,asset_code,active')
   if (assetError) throw assetError
-
-  if (snapshot.inventory.length) {
-    for (const item of snapshot.inventory) {
-      const activeCodes = new Set(item.assetIds.filter(Boolean))
-      const surplusIds = (assetRows ?? [])
-        .filter((asset) =>
-          asset.inventory_item_id === item.id &&
-          asset.active &&
-          !activeCodes.has(asset.asset_code),
-        )
-        .map((asset) => asset.id)
-      if (surplusIds.length) {
-        const { error } = await client
-          .from('inventory_assets')
-          .update({ active: false })
-          .in('id', surplusIds)
-        if (error) throw error
-      }
-    }
-  }
   const assetId = new Map((assetRows ?? []).map((asset) => [asset.asset_code as string, asset.id as string]))
 
   for (const event of snapshot.events) {

@@ -1673,6 +1673,56 @@ button:focus-visible {
   align-items: center;
 }
 
+.inventory-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: min(100%, 440px);
+}
+
+.sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: #248a3d;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.sync-indicator::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
+
+.sync-indicator.saving {
+  color: #007aff;
+}
+
+.sync-indicator.error {
+  color: #d92d20;
+}
+
+.reserved-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.reserved-cell span {
+  display: none;
+  color: #6b7280;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.reserved-cell strong {
+  font-size: 0.95rem;
+}
+
 .search-box {
   width: min(320px, 100%);
   margin: 0;
@@ -4868,6 +4918,10 @@ button:not(:disabled):active,
   background: rgba(15, 23, 42, 0.96);
 }
 
+.dark-mode .reserved-cell span {
+  color: #c7d2e3;
+}
+
 @media (max-width: 760px) {
   .event-list-page .event-list,
   .inventory-table,
@@ -4879,5 +4933,61 @@ button:not(:disabled):active,
 
   .asset-editor .asset-preview-edit-grid {
     max-height: 46dvh;
+  }
+
+  .inventory-heading-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .sync-indicator {
+    align-self: flex-end;
+  }
+
+  .reserved-cell span {
+    display: block;
+  }
+
+  .inventory-table {
+    overflow-x: hidden;
+    scroll-snap-type: none;
+  }
+
+  .inventory-table .table-header {
+    display: none;
+  }
+
+  .inventory-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-width: 0;
+    align-items: start;
+  }
+
+  .inventory-row .item-cell {
+    grid-column: 1;
+  }
+
+  .inventory-row .status-cell {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .inventory-row .stock-editor {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .inventory-row .reserved-cell {
+    grid-column: 1 / -1;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .inventory-row .issue-summary,
+  .inventory-row .inventory-asset-container {
+    grid-column: 1 / -1;
   }
 }
