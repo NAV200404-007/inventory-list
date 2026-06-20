@@ -1977,7 +1977,10 @@ function App() {
   }
 
   const closeEvent = () => {
-    if (!selectedEvent || portalMode !== 'employer' || selectedEvent.status !== 'Returned') {
+    const canClose =
+      selectedEvent?.status === 'Returned' &&
+      (portalMode === 'employer' || selectedEvent.assignedEmployees.includes(currentStaff.name))
+    if (!selectedEvent || !canClose) {
       return
     }
 
@@ -2035,6 +2038,19 @@ function App() {
         record.recordId === selectedEvent.recordId ? { ...record, status: 'Closed' } : record,
       ),
     )
+    if (portalMode === 'employee') {
+      const employerNotifications = accounts
+        .filter((account) => account.portal === 'employer')
+        .map((account) => ({
+          id: createRecordId(),
+          staff: account.name,
+          eventId: selectedEvent.recordId,
+          title: `Event closed: ${selectedEvent.title}`,
+          message: `${currentStaff.name} reviewed the return report and closed the event.`,
+          read: false,
+        }))
+      setNotifications((records) => [...employerNotifications, ...records])
+    }
     addLog(
       'Closed event',
       `${selectedEvent.title} reviewed and closed with return notes for ${selectedEvent.reservations.length} item groups.`,
@@ -3262,6 +3278,14 @@ function App() {
                       </button>
                     </div>
                   )}
+                  {portalMode === 'employee' && selectedEvent.status === 'Returned' && (
+                    <div className="action-row">
+                      <button className="primary-action" onClick={closeEvent} type="button">
+                        <CheckCircle2 size={18} aria-hidden="true" />
+                        Close event
+                      </button>
+                    </div>
+                  )}
                   {checkoutMessage && <p className="inline-success">{checkoutMessage}</p>}
                   {selectedEvent.returnReport && (
                     <ReturnReportSummary event={selectedEvent} inventoryById={inventoryById} />
@@ -3563,14 +3587,20 @@ function App() {
               className="primary-action"
               disabled={
                 portalMode === 'employee'
-                  ? selectedEvent.status !== 'Checked Out'
+                  ? selectedEvent.status !== 'Checked Out' && selectedEvent.status !== 'Returned'
                   : selectedEvent.status !== 'Returned'
               }
-              onClick={portalMode === 'employee' ? submitReturnReport : closeEvent}
+              onClick={
+                portalMode === 'employee' && selectedEvent.status === 'Checked Out'
+                  ? submitReturnReport
+                  : closeEvent
+              }
               type="button"
             >
               <PackageCheck size={18} aria-hidden="true" />
-              {portalMode === 'employee' ? 'Submit return report' : 'Close event'}
+              {portalMode === 'employee' && selectedEvent.status === 'Checked Out'
+                ? 'Submit return report'
+                : 'Close event'}
             </button>
           </section>
         )}
@@ -3655,8 +3685,8 @@ function App() {
                 />
                 <FlowStep
                   index={8}
-                  title="Audit trail"
-                  text="Every assignment, checkout, and return is recorded for accountability."
+                  title="Close event"
+                  text="After the return report is submitted, an assigned employee or employer can close the event."
                 />
               </section>
             </div>

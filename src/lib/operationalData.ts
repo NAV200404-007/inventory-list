@@ -277,6 +277,7 @@ export async function syncOperationalData(client: SupabaseClient, user: Operatio
           checkout_approved: event.checkoutApproved,
           checked_out_by: event.checkedOutBy ? profileId.get(event.checkedOutBy) ?? null : null,
           return_report_by: event.returnReportBy ? profileId.get(event.returnReportBy) ?? null : null,
+          closed_by: event.status === 'Closed' ? user.id : null,
         }).eq('id', event.recordId)
     const { error: eventError } = await eventWrite
     if (eventError) throw eventError
