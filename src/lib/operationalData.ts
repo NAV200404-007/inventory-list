@@ -84,6 +84,7 @@ type AssetRow = {
   id: string
   inventory_item_id: string
   asset_code: string
+  active: boolean
   status: AssetStatus
   issue_remarks: string
   issue_event_id: string | null
@@ -145,7 +146,7 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
   const results = await Promise.all([
     client.from('profiles').select('id,name,role,portal'),
     client.from('inventory_items').select('id,name,category,unit,location,total').order('name'),
-    client.from('inventory_assets').select('id,inventory_item_id,asset_code,status,issue_remarks,issue_event_id,issue_reported_by').order('asset_code'),
+    client.from('inventory_assets').select('id,inventory_item_id,asset_code,active,status,issue_remarks,issue_event_id,issue_reported_by').order('asset_code'),
     client.from('events').select('id,event_code,title,event_type,location,starts_at,ends_at,status,packed_by,checkout_approved,checked_out_by,return_report_by').order('starts_at'),
     client.from('event_staff').select('event_id,profile_id'),
     client.from('event_requirements').select('event_id,inventory_item_id,quantity'),
@@ -168,7 +169,7 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
   const eventById = new Map(eventRows.map((event) => [event.id, event]))
 
   const inventory = items.map((item) => {
-    const itemAssets = assets.filter((asset) => asset.inventory_item_id === item.id)
+    const itemAssets = assets.filter((asset) => asset.inventory_item_id === item.id && asset.active)
     const assetConditions = Object.fromEntries(itemAssets.filter((asset) => asset.status === 'Damaged' || asset.status === 'Missing').map((asset) => {
       const issueEvent = asset.issue_event_id ? eventById.get(asset.issue_event_id) : undefined
       return [asset.asset_code, {
@@ -242,7 +243,7 @@ export async function syncOperationalData(client: SupabaseClient, user: Operatio
     if (error) throw error
     const assetRows = snapshot.inventory.flatMap((item) => item.assetIds.filter(Boolean).map((assetCode) => {
       const condition = item.assetConditions?.[assetCode]
-      return { inventory_item_id: item.id, asset_code: assetCode, status: condition?.status ?? 'Available', issue_remarks: condition?.remarks ?? '', issue_event_id: null, issue_reported_by: condition ? user.id : null }
+      return { inventory_item_id: item.id, asset_code: assetCode, active: true, status: condition?.status ?? 'Available', issue_remarks: condition?.remarks ?? '', issue_event_id: null, issue_reported_by: condition ? user.id : null }
     }))
     if (assetRows.length) {
       const { error: assetError } = await client.from('inventory_assets').upsert(assetRows, { onConflict: 'asset_code' })
@@ -250,8 +251,28 @@ export async function syncOperationalData(client: SupabaseClient, user: Operatio
     }
   }
 
-  const { data: assetRows, error: assetError } = await client.from('inventory_assets').select('id,asset_code')
+  const { data: assetRows, error: assetError } = await client.from('inventory_assets').select('id,inventory_item_id,asset_code,active')
   if (assetError) throw assetError
+
+  if (snapshot.inventory.length) {
+    for (const item of snapshot.inventory) {
+      const activeCodes = new Set(item.assetIds.filter(Boolean))
+      const surplusIds = (assetRows ?? [])
+        .filter((asset) =>
+          asset.inventory_item_id === item.id &&
+          asset.active &&
+          !activeCodes.has(asset.asset_code),
+        )
+        .map((asset) => asset.id)
+      if (surplusIds.length) {
+        const { error } = await client
+          .from('inventory_assets')
+          .update({ active: false })
+          .in('id', surplusIds)
+        if (error) throw error
+      }
+    }
+  }
   const assetId = new Map((assetRows ?? []).map((asset) => [asset.asset_code as string, asset.id as string]))
 
   for (const event of snapshot.events) {
