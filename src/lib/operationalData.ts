@@ -169,7 +169,9 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
   const eventById = new Map(eventRows.map((event) => [event.id, event]))
 
   const inventory = items.map((item) => {
-    const itemAssets = assets.filter((asset) => asset.inventory_item_id === item.id && asset.active)
+    const itemAssets = assets
+      .filter((asset) => asset.inventory_item_id === item.id && asset.active)
+      .slice(0, item.total)
     const assetConditions = Object.fromEntries(itemAssets.filter((asset) => asset.status === 'Damaged' || asset.status === 'Missing').map((asset) => {
       const issueEvent = asset.issue_event_id ? eventById.get(asset.issue_event_id) : undefined
       return [asset.asset_code, {
