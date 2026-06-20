@@ -3237,69 +3237,69 @@ function App() {
               ))}
             </div>
 
-            <section className="add-inventory-panel">
-              <div className="section-heading step-heading">
-                <span>+</span>
-                <div>
-                  <h2>Add inventory item</h2>
-                  <p>Add future equipment such as new kits, tablets, or teaching materials.</p>
+            <details className="add-inventory-panel">
+              <summary>
+                <Plus size={17} aria-hidden="true" />
+                <span>Add inventory item</span>
+              </summary>
+              <div className="add-inventory-content">
+                <p>Add future equipment such as new kits, tablets, or teaching materials.</p>
+
+                {inventoryQuantityError && (
+                  <p className="form-error quantity-warning">{inventoryQuantityError}</p>
+                )}
+
+                <div className="add-inventory-grid">
+                  <label>
+                    Item name
+                    <input
+                      placeholder="e.g. Drone Kit"
+                      value={newInventoryName}
+                      onChange={(event) => {
+                        setNewInventoryName(event.target.value)
+                        setInventoryFormError('')
+                      }}
+                    />
+                  </label>
+                  <label>
+                    ID prefix
+                    <input
+                      placeholder="e.g. DRONE"
+                      value={newInventoryPrefix}
+                      onChange={(event) => {
+                        setNewInventoryPrefix(event.target.value)
+                        setInventoryFormError('')
+                      }}
+                    />
+                  </label>
+                  <label>
+                    Total
+                    <input
+                      inputMode="numeric"
+                      min={0}
+                      pattern="[0-9]*"
+                      step={1}
+                      type="number"
+                      value={newInventoryTotal}
+                      onChange={(event) => updateNewInventoryTotal(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Unit
+                    <input
+                      placeholder="unit, kit, set"
+                      value={newInventoryUnit}
+                      onChange={(event) => setNewInventoryUnit(event.target.value)}
+                    />
+                  </label>
+                  <button className="secondary-action" onClick={addInventoryItem} type="button">
+                    <Plus size={17} aria-hidden="true" />
+                    Add item
+                  </button>
                 </div>
+                {inventoryFormError && <p className="form-error">{inventoryFormError}</p>}
               </div>
-
-              {inventoryQuantityError && (
-                <p className="form-error quantity-warning">{inventoryQuantityError}</p>
-              )}
-
-              <div className="add-inventory-grid">
-                <label>
-                  Item name
-                  <input
-                    placeholder="e.g. Drone Kit"
-                    value={newInventoryName}
-                    onChange={(event) => {
-                      setNewInventoryName(event.target.value)
-                      setInventoryFormError('')
-                    }}
-                  />
-                </label>
-                <label>
-                  ID prefix
-                  <input
-                    placeholder="e.g. DRONE"
-                    value={newInventoryPrefix}
-                    onChange={(event) => {
-                      setNewInventoryPrefix(event.target.value)
-                      setInventoryFormError('')
-                    }}
-                  />
-                </label>
-                <label>
-                  Total
-                  <input
-                    inputMode="numeric"
-                    min={0}
-                    pattern="[0-9]*"
-                    step={1}
-                    type="number"
-                    value={newInventoryTotal}
-                    onChange={(event) => updateNewInventoryTotal(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Unit
-                  <input
-                    placeholder="unit, kit, set"
-                    value={newInventoryUnit}
-                    onChange={(event) => setNewInventoryUnit(event.target.value)}
-                  />
-                </label>
-                <button className="secondary-action" onClick={addInventoryItem} type="button">
-                  <Plus size={17} aria-hidden="true" />
-                  Add item
-                </button>
-              </div>
-              {inventoryFormError && <p className="form-error">{inventoryFormError}</p>}
-            </section>
+            </details>
 
             <div className="inventory-table">
               <div className="table-header">
@@ -3748,17 +3748,18 @@ function AssetIdPreview({
   if (onAssetIdChange) {
     const issueCount = Object.keys(assetConditions ?? {}).length
     return (
-      <div className="asset-preview asset-preview-inline">
-        <div className="asset-preview-heading">
-          <strong>Item IDs</strong>
+      <details className="asset-preview asset-preview-inline asset-editor" open={issueCount > 0 || Boolean(unidentifiedIssueCount)}>
+        <summary className="asset-preview-heading">
+          <strong>Manage item IDs</strong>
           <span>{assetIds.length} items{issueCount ? ' - ' + issueCount + ' issues' : ''}</span>
-        </div>
-        {Boolean(unidentifiedIssueCount) && (
-          <p className="unidentified-issue-warning">
-            {unidentifiedIssueCount} issue{unidentifiedIssueCount === 1 ? '' : 's'} need an item ID. Set the correct item status below.
-          </p>
-        )}
-        <div className="asset-preview-edit-grid">
+        </summary>
+        <div className="asset-editor-content">
+          {Boolean(unidentifiedIssueCount) && (
+            <p className="unidentified-issue-warning">
+              {unidentifiedIssueCount} issue{unidentifiedIssueCount === 1 ? '' : 's'} need an item ID. Set the correct item status below.
+            </p>
+          )}
+          <div className="asset-preview-edit-grid">
           {assetIds.map((assetId, assetIndex) => {
             const condition = assetConditions?.[assetId]
             return (
@@ -3787,8 +3788,9 @@ function AssetIdPreview({
               </div>
             )
           })}
+          </div>
         </div>
-      </div>
+      </details>
     )
   }
 

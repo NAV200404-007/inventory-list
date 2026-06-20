@@ -4755,3 +4755,129 @@ button:not(:disabled):active,
     grid-row: 1;
   }
 }
+
+/* Compact long-list behavior */
+.add-inventory-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.add-inventory-panel > summary {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+  cursor: pointer;
+  color: #007aff;
+  font-weight: 800;
+  list-style: none;
+}
+
+.add-inventory-panel > summary::-webkit-details-marker,
+.asset-editor > summary::-webkit-details-marker {
+  display: none;
+}
+
+.add-inventory-panel > summary::after,
+.asset-editor > summary::after {
+  content: '+';
+  margin-left: auto;
+  color: #6b7280;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.add-inventory-panel[open] > summary::after,
+.asset-editor[open] > summary::after {
+  content: '-';
+}
+
+.add-inventory-content {
+  padding: 0 14px 14px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.add-inventory-content > p:first-child {
+  margin: 12px 0;
+  color: #6b7280;
+  font-size: 0.84rem;
+}
+
+.asset-editor {
+  overflow: hidden;
+}
+
+.asset-editor > .asset-preview-heading {
+  min-height: 42px;
+  padding: 0 4px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.asset-editor > .asset-preview-heading::after {
+  order: 3;
+}
+
+.asset-editor-content {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.asset-editor .asset-preview-edit-grid {
+  max-height: min(42dvh, 380px);
+  padding: 2px 4px 6px 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.event-list-page .event-list,
+.inventory-table,
+.packing-list,
+.asset-return-list,
+.audit-list {
+  max-height: min(66dvh, 720px);
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.inventory-table .table-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: rgba(247, 249, 252, 0.96);
+}
+
+.dark-mode .add-inventory-content,
+.dark-mode .asset-editor-content {
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+.dark-mode .add-inventory-content > p:first-child,
+.dark-mode .add-inventory-panel > summary::after,
+.dark-mode .asset-editor > summary::after {
+  color: #c7d2e3;
+}
+
+.dark-mode .inventory-table .table-header {
+  background: rgba(15, 23, 42, 0.96);
+}
+
+@media (max-width: 760px) {
+  .event-list-page .event-list,
+  .inventory-table,
+  .packing-list,
+  .asset-return-list,
+  .audit-list {
+    max-height: 58dvh;
+  }
+
+  .asset-editor .asset-preview-edit-grid {
+    max-height: 46dvh;
+  }
+}
