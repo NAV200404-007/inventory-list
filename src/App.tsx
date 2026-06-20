@@ -531,6 +531,7 @@ function App() {
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
   const [newPasswordInput, setNewPasswordInput] = useState('')
   const [settingsMessage, setSettingsMessage] = useState('')
+  const [deleteAccountMessage, setDeleteAccountMessage] = useState('')
   const [newEvent, setNewEvent] = useState<EventRecord>(() => createEventDraft([]))
   const [assetReturnLines, setAssetReturnLines] = useState<Record<string, AssetReturnLine>>({})
   const [checkoutMessage, setCheckoutMessage] = useState('')
@@ -1831,6 +1832,28 @@ function App() {
     addLog('Changed password', authenticatedUser.name + ' updated their password.')
   }
 
+  const deleteOwnAccount = async () => {
+    if (!authenticatedUser || !supabase) return
+    const confirmed = window.confirm(
+      'Delete your account permanently? You will immediately lose access to this workspace.',
+    )
+    if (!confirmed) return
+
+    setDeleteAccountMessage('Deleting account...')
+    const { error } = await supabase.rpc('delete_own_account')
+    if (error) {
+      setDeleteAccountMessage(error.message)
+      return
+    }
+
+    await supabase.auth.signOut()
+    setOperationalDataReadyFor('')
+    setAuthenticatedUser(null)
+    setAccounts([])
+    setProfileSettingsOpen(false)
+    setActiveTab('dashboard')
+  }
+
   const closeEvent = () => {
     if (!selectedEvent || portalMode !== 'employer' || selectedEvent.status !== 'Returned') {
       return
@@ -2441,6 +2464,25 @@ function App() {
                           }
                         >
                           {settingsMessage}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="settings-danger">
+                      <div>
+                        <strong>Delete account</strong>
+                        <span>
+                          Permanently remove your login and personal access. The final employer
+                          must promote another employer first.
+                        </span>
+                      </div>
+                      <button className="delete-account-button" onClick={deleteOwnAccount} type="button">
+                        <Trash2 size={17} aria-hidden="true" />
+                        Delete my account
+                      </button>
+                      {deleteAccountMessage && (
+                        <p className={deleteAccountMessage === 'Deleting account...' ? 'login-helper' : 'form-error'}>
+                          {deleteAccountMessage}
                         </p>
                       )}
                     </div>

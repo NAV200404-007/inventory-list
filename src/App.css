@@ -4535,6 +4535,64 @@ button:not(:disabled):active,
   color: #eaf4ff;
 }
 
+.settings-danger {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(255, 59, 48, 0.28);
+  border-radius: 18px;
+  background: rgba(255, 59, 48, 0.05);
+}
+
+.settings-danger > div {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-danger strong {
+  color: #b42318;
+}
+
+.settings-danger span {
+  color: #6b7280;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.delete-account-button {
+  width: fit-content;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 59, 48, 0.35);
+  border-radius: 12px;
+  background: #fff4f3;
+  color: #d92d20;
+  font-weight: 800;
+}
+
+.dark-mode .settings-danger {
+  border-color: rgba(255, 99, 91, 0.4);
+  background: rgba(255, 59, 48, 0.1);
+}
+
+.dark-mode .settings-danger strong,
+.dark-mode .delete-account-button {
+  color: #ffb4ae;
+}
+
+.dark-mode .settings-danger span {
+  color: #c7d2e3;
+}
+
+.dark-mode .delete-account-button {
+  border-color: rgba(255, 99, 91, 0.42);
+  background: rgba(127, 29, 29, 0.28);
+}
+
 @media (max-width: 760px) {
   .topbar {
     align-items: stretch;
@@ -4625,6 +4683,10 @@ button:not(:disabled):active,
 
   .user-row-actions button {
     flex: 1 1 0;
+  }
+
+  .delete-account-button {
+    width: 100%;
   }
 }
 
