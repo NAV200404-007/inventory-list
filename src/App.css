@@ -4811,6 +4811,13 @@ button:not(:disabled):active,
 }
 
 /* Compact long-list behavior */
+button,
+summary,
+input,
+select {
+  touch-action: manipulation;
+}
+
 .add-inventory-panel {
   padding: 0;
   overflow: hidden;

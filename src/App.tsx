@@ -3435,7 +3435,9 @@ function App() {
                         pattern="[0-9]*"
                         type="text"
                         value={inventoryTotalDrafts[item.id] ?? String(item.total)}
-                        onBlur={() => commitInventoryTotal(item)}
+                        onBlur={() => {
+                          window.setTimeout(() => commitInventoryTotal(item), 0)
+                        }}
                         onChange={(event) => {
                           const value = event.target.value
                           if (!/^\d*$/.test(value)) {
@@ -3875,7 +3877,7 @@ function AssetIdPreview({
   if (onAssetIdChange) {
     const issueCount = Object.keys(assetConditions ?? {}).length
     return (
-      <details className="asset-preview asset-preview-inline asset-editor" open={issueCount > 0 || Boolean(unidentifiedIssueCount)}>
+      <details className="asset-preview asset-preview-inline asset-editor">
         <summary className="asset-preview-heading">
           <strong>Manage item IDs</strong>
           <span>{assetIds.length} items{issueCount ? ' - ' + issueCount + ' issues' : ''}</span>
