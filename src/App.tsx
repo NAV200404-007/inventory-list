@@ -24,6 +24,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import './App.css'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
 
 type InventoryStatus =
   | 'Available'
@@ -117,7 +118,8 @@ type StaffUser = {
 }
 
 type LoginAccount = StaffUser & {
-  password: string
+  id: string
+  email: string
   portal: PortalMode
 }
 
@@ -341,8 +343,8 @@ function passwordValidationMessage(password: string) {
   if (!password) {
     return 'Enter a password.'
   }
-  if (password.length < 4) {
-    return 'Password must be at least 4 characters.'
+  if (password.length < 6) {
+    return 'Password must be at least 6 characters.'
   }
   if (password !== password.trim()) {
     return 'Password cannot start or end with a space.'
@@ -438,15 +440,17 @@ function pickAssetIds(
 }
 
 function App() {
-  const [accounts, setAccounts] = useStoredState('accounts', defaultLoginAccounts)
+  const [accounts, setAccounts] = useState<LoginAccount[]>(defaultLoginAccounts)
   const [authenticatedUser, setAuthenticatedUser] = useState<LoginAccount | null>(null)
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [authView, setAuthView] = useState<'login' | 'register'>('login')
   const [loginPortal, setLoginPortal] = useState<PortalMode>('employer')
-  const [loginName, setLoginName] = useState('')
+  const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [registerPortal, setRegisterPortal] = useState<PortalMode>('employee')
   const [registerName, setRegisterName] = useState('')
+  const [registerEmail, setRegisterEmail] = useState('')
   const [registerPassword, setRegisterPassword] = useState('')
   const [registerError, setRegisterError] = useState('')
   const [registerSuccess, setRegisterSuccess] = useState('')
@@ -509,7 +513,6 @@ function App() {
   const staffUsers = accounts.map(({ name, role }) => ({ name, role }))
   const assignableStaff = staffUsers.filter((staff) => staff.role !== 'Employer')
   const employerCount = accounts.filter((account) => account.portal === 'employer').length
-  const loginOptions = accounts.filter((account) => account.portal === loginPortal)
   const allowedNavItems =
     portalMode === 'employee'
       ? navItems.filter((item) => item.id !== 'planner' && item.id !== 'inventory')
@@ -548,36 +551,97 @@ function App() {
   }, [])
   const staffNotifications = notifications.filter((notification) => notification.staff === currentStaff.name)
   const unreadNotificationCount = staffNotifications.filter((notification) => !notification.read).length
-  const currentAccount = accounts.find((account) => account.name === currentStaff.name)
-  const effectiveLoginName =
-    loginOptions.find((account) => account.name.toLowerCase() === loginName.trim().toLowerCase())
-      ?.name ??
-    loginOptions[0]?.name ??
-    ''
+  const currentAccount = accounts.find((account) => account.id === authenticatedUser?.id)
 
-  const handleLogin = () => {
-    const selectedLoginName = effectiveLoginName
-    const selectedPassword = loginPassword.trim()
+  const profileFromRow = (row: { id: string; name: string; role: Role; portal: PortalMode; email?: string }) => ({
+    id: row.id,
+    email: row.email ?? '',
+    name: row.name,
+    role: row.role,
+    portal: row.portal,
+  })
+
+  const loadAuthProfile = useCallback(async (userId: string, email: string) => {
+    if (!supabase) return null
+    const { data, error } = await supabase.from('profiles').select('id,name,role,portal').eq('id', userId).single()
+    if (error || !data) return null
+    return profileFromRow({ ...data, email })
+  }, [])
+
+  const refreshProfiles = useCallback(async (currentUser?: LoginAccount) => {
+    if (!supabase) return
+    const { data } = await supabase.from('profiles').select('id,name,role,portal').order('name')
+    if (data) {
+      setAccounts(data.map((profile) => profileFromRow({ ...profile, email: profile.id === currentUser?.id ? currentUser?.email ?? '' : '' })))
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!supabase || !isSupabaseConfigured) return
+
+    let active = true
+    supabase.auth.getSession().then(async ({ data }) => {
+      const user = data.session?.user
+      if (active && user) {
+        const profile = await loadAuthProfile(user.id, user.email ?? '')
+        if (profile) {
+          setAuthenticatedUser(profile)
+          setCurrentStaff({ name: profile.name, role: profile.role })
+          void refreshProfiles(profile)
+        }
+      }
+      if (active) setAuthLoading(false)
+    })
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        setAuthenticatedUser(null)
+        setAccounts([])
+      }
+    })
+    return () => {
+      active = false
+      listener.subscription.unsubscribe()
+    }
+  }, [loadAuthProfile, refreshProfiles])
+
+  const handleLogin = async () => {
+    if (!supabase) {
+      setLoginError('Supabase is not configured.')
+      return
+    }
+    const email = loginEmail.trim().toLowerCase()
+    const selectedPassword = loginPassword
+    if (!email) {
+      setLoginError('Enter your email address.')
+      return
+    }
     const passwordError = passwordValidationMessage(selectedPassword)
     if (passwordError) {
       setLoginError(passwordError)
       return
     }
 
-    const account = accounts.find(
-      (candidate) =>
-        candidate.portal === loginPortal &&
-        candidate.name.toLowerCase() === selectedLoginName.toLowerCase() &&
-        candidate.password === selectedPassword,
-    )
-
-    if (!account) {
-      setLoginError('Invalid password for this portal.')
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: selectedPassword })
+    if (error || !data.user) {
+      setLoginError(error?.message ?? 'Unable to sign in.')
+      return
+    }
+    const profile = await loadAuthProfile(data.user.id, data.user.email ?? email)
+    if (!profile) {
+      await supabase.auth.signOut()
+      setLoginError('No inventory profile exists for this account.')
+      return
+    }
+    if (profile.portal !== loginPortal) {
+      await supabase.auth.signOut()
+      setLoginError('This account belongs to the ' + profile.portal + ' portal.')
       return
     }
 
-    setAuthenticatedUser(account)
-    setCurrentStaff({ name: account.name, role: account.role })
+    setAuthenticatedUser(profile)
+    setCurrentStaff({ name: profile.name, role: profile.role })
+    void refreshProfiles(profile)
     setActiveTab('dashboard')
     setLoginPassword('')
     setLoginError('')
@@ -585,59 +649,62 @@ function App() {
 
   const handlePortalChoice = (portal: PortalMode) => {
     setLoginPortal(portal)
-    const firstAccount = accounts.find((account) => account.portal === portal)
-    setLoginName(firstAccount?.name ?? '')
     setLoginPassword('')
     setRegisterSuccess('')
     setLoginError('')
   }
 
-  const handleRegister = () => {
-    const name = registerName.trim()
-    const password = registerPassword
-
-    if (!name) {
-      setRegisterError('Enter a name.')
+  const handleRegister = async () => {
+    if (!supabase) {
+      setRegisterError('Supabase is not configured.')
       return
     }
-
+    const name = registerName.trim()
+    const email = registerEmail.trim().toLowerCase()
+    const password = registerPassword
+    if (!name || !email) {
+      setRegisterError('Enter a name and email address.')
+      return
+    }
     const passwordError = passwordValidationMessage(password)
     if (passwordError) {
       setRegisterError(passwordError)
       return
     }
 
-    const duplicateAccount = accounts.some(
-      (account) => account.name.toLowerCase() === name.toLowerCase(),
-    )
-    if (duplicateAccount) {
-      setRegisterError('An account with this name already exists.')
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name, portal: registerPortal } },
+    })
+    if (error) {
+      setRegisterError(error.message)
       return
     }
 
-    const newAccount: LoginAccount = {
-      name,
-      password,
-      portal: registerPortal,
-      role: registerPortal === 'employer' ? 'Employer' : 'Employee',
-    }
-
-    setAccounts((currentAccounts) => [...currentAccounts, newAccount])
     setRegisterName('')
+    setRegisterEmail('')
     setRegisterPassword('')
     setRegisterError('')
-    setRegisterSuccess(`${name} was added. You can log in now.`)
-    setLoginPortal(registerPortal)
-    setLoginName(name)
-    setLoginPassword(password)
-    setLoginError('')
-    setAuthView('login')
+    if (data.session && data.user) {
+      const profile = await loadAuthProfile(data.user.id, data.user.email ?? email)
+      if (profile) {
+        setAuthenticatedUser(profile)
+        setCurrentStaff({ name: profile.name, role: profile.role })
+        void refreshProfiles(profile)
+      }
+    } else {
+      setRegisterSuccess('Account created. Check your email to confirm it before logging in.')
+      setLoginEmail(email)
+      setAuthView('login')
+    }
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (supabase) await supabase.auth.signOut()
     setAuthenticatedUser(null)
+    setAccounts([])
     setLoginPortal(portalMode)
-    setLoginName(currentStaff.name)
     setActiveTab('dashboard')
   }
 
@@ -1223,53 +1290,28 @@ function App() {
     addLog('Deleted event', `${eventToDelete.id} - ${eventToDelete.title} was deleted.`)
   }
 
-  const deleteAccount = (accountName: string) => {
+  const deleteAccount = async (accountName: string) => {
     const accountToDelete = accounts.find((account) => account.name === accountName)
-    if (!accountToDelete) {
-      return
-    }
-
-    if (accountToDelete.name === currentStaff.name) {
+    if (!accountToDelete || !supabase) return
+    if (accountToDelete.id === authenticatedUser?.id) {
       setUserManagementMessage('You cannot delete the account you are currently using.')
       return
     }
-
     if (accountToDelete.portal === 'employer' && employerCount <= 1) {
-      setUserManagementMessage('Keep at least one employer account so the app stays manageable.')
+      setUserManagementMessage('Keep at least one employer account.')
       return
     }
+    if (!window.confirm('Delete ' + accountToDelete.name + '?')) return
 
-    const shouldDelete = window.confirm(
-      `Delete ${accountToDelete.name}? They will be removed from assigned event teams.`,
-    )
-    if (!shouldDelete) {
+    const { error } = await supabase.from('profiles').delete().eq('id', accountToDelete.id)
+    if (error) {
+      setUserManagementMessage(error.message)
       return
     }
-
-    setAccounts((records) => records.filter((account) => account.name !== accountName))
-    setEvents((records) =>
-      records.map((event) =>
-        event.assignedEmployees.includes(accountName)
-          ? {
-              ...event,
-              assignedEmployees: event.assignedEmployees.filter((name) => name !== accountName),
-            }
-          : event,
-      ),
-    )
-    setNotifications((records) =>
-      records.filter((notification) => notification.staff !== accountName),
-    )
-    setNewEvent((record) =>
-      record.assignedEmployees.includes(accountName)
-        ? {
-            ...record,
-            assignedEmployees: record.assignedEmployees.filter((name) => name !== accountName),
-          }
-        : record,
-    )
-    setUserManagementMessage(`${accountName} deleted and removed from assigned teams.`)
-    addLog('Deleted user', `${accountName} was removed from the system.`)
+    setAccounts((records) => records.filter((account) => account.id !== accountToDelete.id))
+    setEvents((records) => records.map((event) => event.assignedEmployees.includes(accountName) ? { ...event, assignedEmployees: event.assignedEmployees.filter((name) => name !== accountName) } : event))
+    setUserManagementMessage(accountName + ' access was removed.')
+    addLog('Deleted user', accountName + ' was removed from the system.')
   }
 
   const confirmEvent = () => {
@@ -1573,36 +1615,32 @@ function App() {
     }))
   }
 
-  const changeCurrentPassword = () => {
-    if (!authenticatedUser) {
-      return
-    }
-
-    const nextPassword = newPasswordInput.trim()
+  const changeCurrentPassword = async () => {
+    if (!authenticatedUser || !supabase) return
+    const nextPassword = newPasswordInput
     const passwordError = passwordValidationMessage(nextPassword)
-
-    if (currentPasswordInput.trim() !== authenticatedUser.password) {
-      setSettingsMessage('Current password is incorrect.')
-      return
-    }
-
     if (passwordError) {
       setSettingsMessage(passwordError)
       return
     }
 
-    setAccounts((records) =>
-      records.map((account) =>
-        account.name === authenticatedUser.name && account.portal === authenticatedUser.portal
-          ? { ...account, password: nextPassword }
-          : account,
-      ),
-    )
-    setAuthenticatedUser({ ...authenticatedUser, password: nextPassword })
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: authenticatedUser.email,
+      password: currentPasswordInput,
+    })
+    if (signInError) {
+      setSettingsMessage('Current password is incorrect.')
+      return
+    }
+    const { error } = await supabase.auth.updateUser({ password: nextPassword })
+    if (error) {
+      setSettingsMessage(error.message)
+      return
+    }
     setCurrentPasswordInput('')
     setNewPasswordInput('')
     setSettingsMessage('Password updated.')
-    addLog('Changed password', `${authenticatedUser.name} updated their password.`)
+    addLog('Changed password', authenticatedUser.name + ' updated their password.')
   }
 
   const closeEvent = () => {
@@ -1688,6 +1726,14 @@ function App() {
     return 'Available'
   }
 
+  if (authLoading) {
+    return (
+      <main className={'login-shell ' + (themeMode === 'dark' ? 'dark-mode' : '')}>
+        <section className="login-panel"><p className="login-copy">Connecting securely...</p></section>
+      </main>
+    )
+  }
+
   if (!authenticatedUser) {
     return (
       <main className={`login-shell ${themeMode === 'dark' ? 'dark-mode' : ''}`}>
@@ -1755,30 +1801,24 @@ function App() {
                 }}
               >
                 <label>
-                  Account
-                  <select
-                    value={effectiveLoginName}
+                  Email
+                  <input
+                    autoComplete="email"
+                    placeholder="name@company.com"
+                    type="email"
+                    value={loginEmail}
                     onChange={(event) => {
-                      setLoginName(event.target.value)
+                      setLoginEmail(event.target.value)
                       setLoginError('')
                     }}
-                  >
-                    {loginOptions.length === 0 && (
-                      <option value="">No accounts yet</option>
-                    )}
-                    {loginOptions.map((account) => (
-                      <option key={account.name} value={account.name}>
-                        {account.name} - {account.role}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
 
                 <label>
                   Password
                   <input
                     autoComplete="current-password"
-                    minLength={4}
+                    minLength={6}
                     placeholder="Enter password"
                     type="password"
                     value={loginPassword}
@@ -1791,13 +1831,7 @@ function App() {
 
                 {loginError && <p className="login-error">{loginError}</p>}
                 {registerSuccess && <p className="login-success">{registerSuccess}</p>}
-                {loginOptions.length === 0 && (
-                  <p className="login-hint">
-                    No {loginPortal} accounts yet. Create an account first.
-                  </p>
-                )}
-
-                <button className="primary-action" disabled={loginOptions.length === 0} type="submit">
+                <button className="primary-action" type="submit">
                   <LockKeyhole size={18} aria-hidden="true" />
                   Login to {loginPortal === 'employer' ? 'Employer' : 'Employee'} portal
                 </button>
@@ -1852,10 +1886,24 @@ function App() {
               </label>
 
               <label>
+                Email
+                <input
+                  autoComplete="email"
+                  placeholder="name@company.com"
+                  type="email"
+                  value={registerEmail}
+                  onChange={(event) => {
+                    setRegisterEmail(event.target.value)
+                    setRegisterError('')
+                  }}
+                />
+              </label>
+
+              <label>
                 Password
                 <input
                   autoComplete="new-password"
-                  minLength={4}
+                  minLength={6}
                   placeholder="Create password"
                   type="password"
                   value={registerPassword}
@@ -1865,7 +1913,7 @@ function App() {
                   }}
                 />
               </label>
-              <p className="field-hint">Use at least 4 characters. Avoid spaces at the start or end.</p>
+              <p className="field-hint">Use at least 6 characters. Avoid spaces at the start or end.</p>
 
               {registerError && <p className="login-error">{registerError}</p>}
 
@@ -1878,7 +1926,7 @@ function App() {
 
           <div className="login-hint">
             <strong>For testing:</strong>
-            <span>Created accounts, inventory edits, and events are saved in this browser.</span>
+            <span>Accounts are secured by Supabase. Shared inventory sync is being enabled next.</span>
           </div>
         </section>
       </main>
@@ -2178,7 +2226,7 @@ function App() {
                         New password
                         <input
                           autoComplete="new-password"
-                          minLength={4}
+                          minLength={6}
                           type="password"
                           value={newPasswordInput}
                           onChange={(event) => {
