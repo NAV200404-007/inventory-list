@@ -52,6 +52,8 @@ export type OperationalEvent = {
   returnReport?: Record<string, { returned: number; damaged: number; missing: number; remarks: string }>
   assetReturnReport?: Record<string, { status: ReturnStatus; remarks: string }>
   returnReportBy?: string
+  returnReviewed: boolean
+  returnReviewedBy?: string
   packingPhotos: {
     id: string
     storagePath: string
@@ -127,6 +129,8 @@ type EventRow = {
   checkout_approved: boolean
   checked_out_by: string | null
   return_report_by: string | null
+  return_reviewed: boolean
+  return_reviewed_by: string | null
 }
 type StaffRow = { event_id: string; profile_id: string }
 type RequirementRow = { event_id: string; inventory_item_id: string; quantity: number }
@@ -179,7 +183,7 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
     client.from('profiles').select('id,name,role,portal'),
     client.from('inventory_items').select('id,name,category,unit,location,total').order('name'),
     client.from('inventory_assets').select('id,inventory_item_id,asset_code,active,status,issue_remarks,issue_event_id,issue_reported_by').order('asset_code'),
-    client.from('events').select('id,event_code,title,event_type,location,starts_at,ends_at,status,packed_by,checkout_approved,checked_out_by,return_report_by').order('starts_at'),
+    client.from('events').select('id,event_code,title,event_type,location,starts_at,ends_at,status,packed_by,checkout_approved,checked_out_by,return_report_by,return_reviewed,return_reviewed_by').order('starts_at'),
     client.from('event_staff').select('event_id,profile_id'),
     client.from('event_requirements').select('event_id,inventory_item_id,quantity'),
     client.from('event_assets').select('event_id,asset_id,packed,return_status,return_remarks'),
@@ -262,6 +266,8 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
       returnReport: Object.keys(assetReturnReport).length ? returnReport : undefined,
       assetReturnReport: Object.keys(assetReturnReport).length ? assetReturnReport : undefined,
       returnReportBy: event.return_report_by ? profileName.get(event.return_report_by) : undefined,
+      returnReviewed: event.return_reviewed,
+      returnReviewedBy: event.return_reviewed_by ? profileName.get(event.return_reviewed_by) : undefined,
       packingPhotos: packingPhotoRows.filter((photo) => photo.event_id === event.id && photo.photo_type === 'packing').map((photo) => ({
         id: photo.id,
         storagePath: photo.storage_path,
@@ -319,6 +325,8 @@ export async function syncOperationalData(
       checkout_approved: event.checkoutApproved,
       checked_out_by: event.checkedOutBy ? profileId.get(event.checkedOutBy) ?? null : null,
       return_report_by: event.returnReportBy ? profileId.get(event.returnReportBy) ?? null : null,
+      return_reviewed: event.returnReviewed,
+      return_reviewed_by: event.returnReviewedBy ? profileId.get(event.returnReviewedBy) ?? null : null,
       closed_by: event.status === 'Closed' ? user.id : null,
     }
     const eventWrite = user.portal === 'employer'
@@ -329,6 +337,8 @@ export async function syncOperationalData(
           checkout_approved: event.checkoutApproved,
           checked_out_by: event.checkedOutBy ? profileId.get(event.checkedOutBy) ?? null : null,
           return_report_by: event.returnReportBy ? profileId.get(event.returnReportBy) ?? null : null,
+          return_reviewed: event.returnReviewed,
+          return_reviewed_by: event.returnReviewedBy ? profileId.get(event.returnReviewedBy) ?? null : null,
           closed_by: event.status === 'Closed' ? user.id : null,
         }).eq('id', event.recordId)
     const { error: eventError } = await eventWrite

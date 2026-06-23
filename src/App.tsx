@@ -113,6 +113,8 @@ type EventRecord = {
   returnReport?: Record<string, ReturnLine>
   assetReturnReport?: Record<string, AssetReturnLine>
   returnReportBy?: string
+  returnReviewed: boolean
+  returnReviewedBy?: string
   packingPhotos: PackingPhoto[]
   returnPhotos: PackingPhoto[]
 }
@@ -203,6 +205,7 @@ function normalizeEventRecord(event: EventRecord & { staff?: string; recordId?: 
     checkoutApproved: event.checkoutApproved ?? false,
     packingPhotos: event.packingPhotos ?? [],
     returnPhotos: event.returnPhotos ?? [],
+    returnReviewed: event.returnReviewed ?? false,
     status: normalizeEventStatus(event.status),
   }
 }
@@ -394,6 +397,7 @@ function createEventDraft(events: EventRecord[]): EventRecord {
     checkoutApproved: false,
     packingPhotos: [],
     returnPhotos: [],
+    returnReviewed: false,
   }
 }
 
@@ -2159,6 +2163,8 @@ function App() {
               returnReport: report,
               assetReturnReport: assetReport,
               returnReportBy: currentStaff.name,
+              returnReviewed: false,
+              returnReviewedBy: undefined,
               status: 'Returned',
             }
           : record,
@@ -2281,6 +2287,7 @@ function App() {
   const closeEvent = () => {
     const canClose =
       selectedEvent?.status === 'Returned' &&
+      selectedEvent.returnReviewed &&
       (portalMode === 'employer' || selectedEvent.assignedEmployees.includes(currentStaff.name))
     if (!selectedEvent || !canClose) {
       return
@@ -2352,11 +2359,40 @@ function App() {
           read: false,
         }))
       setNotifications((records) => [...employerNotifications, ...records])
+    } else {
+      const employeeNotifications = selectedEvent.assignedEmployees.map((employeeName) => ({
+        id: createRecordId(),
+        staff: employeeName,
+        eventId: selectedEvent.recordId,
+        title: `Event closed: ${selectedEvent.title}`,
+        message: `${currentStaff.name} reviewed the return report and closed the event.`,
+        read: false,
+      }))
+      setNotifications((records) => [...employeeNotifications, ...records])
     }
     addLog(
       'Closed event',
       `${selectedEvent.title} reviewed and closed with return notes for ${selectedEvent.reservations.length} item groups.`,
     )
+  }
+
+  const reviewReturnReport = () => {
+    if (!selectedEvent || portalMode !== 'employer' || selectedEvent.status !== 'Returned' || selectedEvent.returnReviewed) return
+    const employeeNotifications = selectedEvent.assignedEmployees.map((employeeName) => ({
+      id: createRecordId(),
+      staff: employeeName,
+      eventId: selectedEvent.recordId,
+      title: `Returns approved: ${selectedEvent.title}`,
+      message: `${currentStaff.name} reviewed the return report. The event can now be closed.`,
+      read: false,
+    }))
+    setEvents((records) => records.map((record) =>
+      record.recordId === selectedEvent.recordId
+        ? { ...record, returnReviewed: true, returnReviewedBy: currentStaff.name }
+        : record,
+    ))
+    setNotifications((records) => [...employeeNotifications, ...records])
+    addLog('Reviewed return report', `${selectedEvent.title} return report approved for closure.`)
   }
 
   const statusForItem = (item: InventoryItem): InventoryStatus => {
@@ -3651,18 +3687,18 @@ function App() {
                         <ClipboardList size={18} aria-hidden="true" />
                         Review returns
                       </button>
-                      <button className="primary-action" onClick={closeEvent} type="button">
-                        <CheckCircle2 size={18} aria-hidden="true" />
-                        Close event
-                      </button>
                     </div>
                   )}
                   {portalMode === 'employee' && selectedEvent.status === 'Returned' && (
                     <div className="action-row">
-                      <button className="primary-action" onClick={closeEvent} type="button">
-                        <CheckCircle2 size={18} aria-hidden="true" />
-                        Close event
-                      </button>
+                      {selectedEvent.returnReviewed ? (
+                        <button className="primary-action" onClick={closeEvent} type="button">
+                          <CheckCircle2 size={18} aria-hidden="true" />
+                          Close event
+                        </button>
+                      ) : (
+                        <p className="workflow-waiting">Return report submitted. Waiting for employer review.</p>
+                      )}
                     </div>
                   )}
                   {checkoutMessage && <p className="inline-success">{checkoutMessage}</p>}
@@ -3876,15 +3912,25 @@ function App() {
           <section className="surface">
             <div className="section-heading">
               <div>
-                <h2>{portalMode === 'employee' ? 'Submit return report' : 'Review returns'}</h2>
+                <h2>
+                  {portalMode === 'employee'
+                    ? selectedEvent.status === 'Checked Out'
+                      ? 'Submit return report'
+                      : 'Return report'
+                    : 'Review returns'}
+                </h2>
                 <p>
                   {portalMode === 'employee'
-                    ? 'Record returned, damaged, and missing equipment for employer review.'
+                    ? selectedEvent.status === 'Checked Out'
+                      ? 'Record returned, damaged, and missing equipment for employer review.'
+                      : selectedEvent.returnReviewed
+                        ? 'The employer approved this report. The event is ready to close.'
+                        : 'Submitted for employer review. Item statuses are now read-only.'
                     : 'Review the submitted return report before closing the event.'}
                 </p>
               </div>
               <div className="return-heading-actions">
-                {portalMode === 'employee' && (
+                {portalMode === 'employee' && selectedEvent.status === 'Checked Out' && (
                   <button className="secondary-action" onClick={markAllReturned} type="button">
                     <CheckCircle2 size={17} aria-hidden="true" />
                     Mark all returned
@@ -3912,6 +3958,9 @@ function App() {
               <span>Packed by: {selectedEvent.packedBy || 'Not recorded'}</span>
               <span>Checked out by: {selectedEvent.checkedOutBy || 'Not recorded'}</span>
               <span>Return report by: {selectedEvent.returnReportBy || (portalMode === 'employee' ? currentStaff.name : 'Not submitted')}</span>
+              {selectedEvent.status === 'Returned' && (
+                <span>Employer review: {selectedEvent.returnReviewed ? `Approved by ${selectedEvent.returnReviewedBy || 'employer'}` : 'Pending'}</span>
+              )}
             </div>
 
             <div className="asset-return-list">
@@ -3929,7 +3978,7 @@ function App() {
                         assetReturnLines[assetId] ??
                         selectedEvent.assetReturnReport?.[assetId] ??
                         { status: 'Returned' as AssetReturnStatus, remarks: '' }
-                      const readOnly = portalMode === 'employer'
+                      const readOnly = portalMode === 'employer' || selectedEvent.status !== 'Checked Out'
                       return (
                         <div className="asset-return-row" key={assetId}>
                           <strong>{assetId}</strong>
@@ -4009,25 +4058,35 @@ function App() {
               {returnPhotoError && <p className="form-error">{returnPhotoError}</p>}
             </section>
 
-            <button
-              className="primary-action"
-              disabled={
-                portalMode === 'employee'
-                  ? (selectedEvent.status !== 'Checked Out' && selectedEvent.status !== 'Returned') || returnPhotoUploading
-                  : selectedEvent.status !== 'Returned'
-              }
-              onClick={
-                portalMode === 'employee' && selectedEvent.status === 'Checked Out'
-                  ? submitReturnReport
-                  : closeEvent
-              }
-              type="button"
-            >
-              <PackageCheck size={18} aria-hidden="true" />
-              {portalMode === 'employee' && selectedEvent.status === 'Checked Out'
-                ? 'Submit return report'
-                : 'Close event'}
-            </button>
+            {selectedEvent.status === 'Closed' ? (
+              <p className="workflow-waiting">This event is closed. The return report remains available for reference.</p>
+            ) : (
+              <button
+                className="primary-action"
+                disabled={
+                  portalMode === 'employee'
+                    ? (selectedEvent.status !== 'Checked Out' && (selectedEvent.status !== 'Returned' || !selectedEvent.returnReviewed)) || returnPhotoUploading
+                    : selectedEvent.status !== 'Returned'
+                }
+                onClick={
+                  portalMode === 'employee' && selectedEvent.status === 'Checked Out'
+                    ? submitReturnReport
+                    : portalMode === 'employer' && !selectedEvent.returnReviewed
+                      ? reviewReturnReport
+                      : closeEvent
+                }
+                type="button"
+              >
+                <PackageCheck size={18} aria-hidden="true" />
+                {portalMode === 'employee' && selectedEvent.status === 'Checked Out'
+                  ? 'Submit return report'
+                  : portalMode === 'employer' && !selectedEvent.returnReviewed
+                    ? 'Approve return report'
+                    : portalMode === 'employee' && !selectedEvent.returnReviewed
+                      ? 'Waiting for employer review'
+                      : 'Close event'}
+              </button>
+            )}
           </section>
         )}
 
@@ -4111,8 +4170,8 @@ function App() {
                 />
                 <FlowStep
                   index={8}
-                  title="Close event"
-                  text="After the return report is submitted, an assigned employee or employer can close the event."
+                  title="Review and close"
+                  text="The employer approves the return report, then the employer or an assigned employee can close the event."
                 />
               </section>
             </div>
@@ -4244,8 +4303,8 @@ function ReturnReportSummary({
           <p>{formatEventSchedule(event)}</p>
           <p>Packed by: {event.packedBy || 'Not recorded'} - Checked out by: {event.checkedOutBy || 'Not recorded'} - Report submitted by: {event.returnReportBy || 'Not recorded'}</p>
         </div>
-        <Badge tone={totalMissing > 0 || totalDamaged > 0 ? 'warning' : 'success'}>
-          Ready for review
+        <Badge tone={event.returnReviewed ? 'success' : totalMissing > 0 || totalDamaged > 0 ? 'warning' : 'info'}>
+          {event.returnReviewed ? 'Employer reviewed' : 'Ready for review'}
         </Badge>
       </div>
       {event.returnPhotos.length > 0 && (
