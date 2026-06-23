@@ -199,6 +199,20 @@ function normalizeEventRecord(event: EventRecord & { staff?: string; recordId?: 
   }
 }
 
+function eventSyncSignature(event: EventRecord) {
+  const { packingPhotos: _packingPhotos, returnPhotos: _returnPhotos, ...persistentEvent } = event
+  void _packingPhotos
+  void _returnPhotos
+  return JSON.stringify(persistentEvent)
+}
+
+function changedRecordIds<T extends { id: string }>(current: T[], previous: T[]) {
+  const previousById = new Map(previous.map((record) => [record.id, JSON.stringify(record)]))
+  return current
+    .filter((record) => previousById.get(record.id) !== JSON.stringify(record))
+    .map((record) => record.id)
+}
+
 function readStoredValue<T>(key: string, fallback: T) {
   try {
     const storedValue = window.localStorage.getItem(`${storagePrefix}${key}`)
@@ -527,6 +541,11 @@ function App() {
   const lastServerSnapshot = useRef('')
   const lastInventorySnapshot = useRef('')
   const inventoryDirty = useRef(false)
+  const operationalDirty = useRef(false)
+  const operationalSyncInFlight = useRef(false)
+  const pendingOperationalRefresh = useRef(false)
+  const operationalSaveVersion = useRef(0)
+  const operationalSaveQueue = useRef<Promise<void>>(Promise.resolve())
   const [inventorySyncStatus, setInventorySyncStatus] = useState<'saved' | 'editing' | 'saving' | 'error'>('saved')
   const [themeMode, setThemeMode] = useStoredState<'light' | 'dark'>('themeMode', 'light')
   const [currentStaff, setCurrentStaff] = useState<StaffUser>({
@@ -565,6 +584,14 @@ function App() {
   const [returnPhotoUploading, setReturnPhotoUploading] = useState(false)
   const [returnPhotoError, setReturnPhotoError] = useState('')
   const [manualRefreshLoading, setManualRefreshLoading] = useState(false)
+
+  useEffect(() => {
+    operationalDirty.current = false
+    operationalSyncInFlight.current = false
+    pendingOperationalRefresh.current = false
+    operationalSaveVersion.current = 0
+    operationalSaveQueue.current = Promise.resolve()
+  }, [authenticatedUser?.id])
 
   const inventoryById = useMemo(
     () => Object.fromEntries(inventory.map((item) => [item.id, item])),
@@ -707,8 +734,16 @@ function App() {
 
   const refreshOperationalData = useCallback(async () => {
     if (!supabase || !authenticatedUser) return
+    if (operationalDirty.current || operationalSyncInFlight.current) {
+      pendingOperationalRefresh.current = true
+      return
+    }
     try {
       const snapshot = await loadOperationalData(supabase)
+      if (operationalDirty.current || operationalSyncInFlight.current) {
+        pendingOperationalRefresh.current = true
+        return
+      }
       const loadedInventory = snapshot.inventory.length > 0 ? snapshot.inventory : initialInventory
       const loadedEvents = snapshot.events.map((event) => normalizeEventRecord(event as EventRecord))
       lastServerSnapshot.current = JSON.stringify({
@@ -753,7 +788,7 @@ function App() {
     let realtimeRefresh = 0
     const scheduleRefresh = () => {
       window.clearTimeout(realtimeRefresh)
-      realtimeRefresh = window.setTimeout(() => void refreshOperationalData(), 300)
+      realtimeRefresh = window.setTimeout(() => void refreshOperationalData(), 700)
     }
 
     const channel = supabase
@@ -783,15 +818,59 @@ function App() {
     const snapshot = { inventory: [], events, notifications, auditLogs }
     const serializedSnapshot = JSON.stringify(snapshot)
     if (serializedSnapshot === lastServerSnapshot.current) return
+    let previousEvents: EventRecord[] = []
+    let previousNotifications: NotificationRecord[] = []
+    let previousAuditLogs: AuditLog[] = []
+    try {
+      const previousSnapshot = JSON.parse(lastServerSnapshot.current || '{}') as Partial<typeof snapshot>
+      previousEvents = previousSnapshot.events ?? []
+      previousNotifications = previousSnapshot.notifications ?? []
+      previousAuditLogs = previousSnapshot.auditLogs ?? []
+    } catch {
+      // A malformed cache should trigger a full synchronization.
+    }
+    const previousEventsById = new Map(
+      previousEvents.map((event) => [event.recordId, eventSyncSignature(event)]),
+    )
+    const changedEventIds = events
+      .filter((event) => previousEventsById.get(event.recordId) !== eventSyncSignature(event))
+      .map((event) => event.recordId)
+    const changedNotificationIds = changedRecordIds(notifications, previousNotifications)
+    const changedAuditIds = changedRecordIds(auditLogs, previousAuditLogs)
+    operationalDirty.current = true
+    const saveVersion = ++operationalSaveVersion.current
     const timer = window.setTimeout(() => {
-      lastServerSnapshot.current = serializedSnapshot
-      void syncOperationalData(client, authenticatedUser, snapshot).catch((error) => {
-        lastServerSnapshot.current = ''
-        console.error('Unable to save shared operational data', error)
-      })
+      operationalSaveQueue.current = operationalSaveQueue.current
+        .catch(() => undefined)
+        .then(async () => {
+          operationalSyncInFlight.current = true
+          try {
+            await syncOperationalData(client, authenticatedUser, snapshot, {
+              eventIds: changedEventIds,
+              notificationIds: changedNotificationIds,
+              auditIds: changedAuditIds,
+            })
+            if (saveVersion === operationalSaveVersion.current) {
+              lastServerSnapshot.current = serializedSnapshot
+              operationalDirty.current = false
+            }
+          } catch (error) {
+            if (saveVersion === operationalSaveVersion.current) {
+              lastServerSnapshot.current = ''
+              operationalDirty.current = false
+            }
+            console.error('Unable to save shared operational data', error)
+          } finally {
+            operationalSyncInFlight.current = false
+            if (!operationalDirty.current && pendingOperationalRefresh.current) {
+              pendingOperationalRefresh.current = false
+              await refreshOperationalData()
+            }
+          }
+        })
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [operationalDataReadyFor, authenticatedUser, events, notifications, auditLogs, selectedEventInvalidAssetIds.length, selectedEventScheduleValid])
+  }, [operationalDataReadyFor, authenticatedUser, events, notifications, auditLogs, selectedEventInvalidAssetIds.length, selectedEventScheduleValid, refreshOperationalData])
 
   useEffect(() => {
     if (!authenticatedUser || operationalDataReadyFor !== authenticatedUser.id || !supabase) return

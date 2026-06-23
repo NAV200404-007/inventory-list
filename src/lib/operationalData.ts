@@ -289,7 +289,12 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
   }
 }
 
-export async function syncOperationalData(client: SupabaseClient, user: OperationalUser, snapshot: OperationalSnapshot) {
+export async function syncOperationalData(
+  client: SupabaseClient,
+  user: OperationalUser,
+  snapshot: OperationalSnapshot,
+  changed: { eventIds: string[]; notificationIds: string[]; auditIds: string[] },
+) {
   const { data: profileRows, error: profileError } = await client.from('profiles').select('id,name,portal')
   if (profileError) throw profileError
   const profiles = (profileRows ?? []) as { id: string; name: string; portal: PortalMode }[]
@@ -299,7 +304,7 @@ export async function syncOperationalData(client: SupabaseClient, user: Operatio
   if (assetError) throw assetError
   const assetId = new Map((assetRows ?? []).map((asset) => [asset.asset_code as string, asset.id as string]))
 
-  for (const event of snapshot.events) {
+  for (const event of snapshot.events.filter((record) => changed.eventIds.includes(record.recordId))) {
     const eventRow = {
       id: event.recordId,
       event_code: event.id,
@@ -353,17 +358,13 @@ export async function syncOperationalData(client: SupabaseClient, user: Operatio
       return_remarks: event.assetReturnReport?.[assetRows?.find((asset) => asset.id === id)?.asset_code as string]?.remarks ?? '',
       returned_at: event.assetReturnReport?.[assetRows?.find((asset) => asset.id === id)?.asset_code as string] ? new Date().toISOString() : null,
     })))
-    if (user.portal === 'employee') {
-      const { error } = await client.from('event_assets').delete().eq('event_id', event.recordId)
-      if (error) throw error
-    }
     if (allocations.length) {
       const { error } = await client.from('event_assets').upsert(allocations, { onConflict: 'event_id,asset_id' })
       if (error) throw error
     }
   }
 
-  const notificationRows = snapshot.notifications.filter((notification) => profileId.has(notification.staff)).map((notification) => ({ id: notification.id, recipient_id: profileId.get(notification.staff), event_id: notification.eventId || null, title: notification.title, message: notification.message, read: notification.read }))
+  const notificationRows = snapshot.notifications.filter((notification) => changed.notificationIds.includes(notification.id) && profileId.has(notification.staff)).map((notification) => ({ id: notification.id, recipient_id: profileId.get(notification.staff), event_id: notification.eventId || null, title: notification.title, message: notification.message, read: notification.read }))
   if (user.portal === 'employer' && notificationRows.length) {
     const { error } = await client.from('notifications').upsert(notificationRows)
     if (error) throw error
@@ -379,7 +380,7 @@ export async function syncOperationalData(client: SupabaseClient, user: Operatio
       if (error) throw error
     }
   }
-  const auditRows = snapshot.auditLogs.filter((log) => log.staff === user.name).map((log) => ({ id: log.id, actor_id: user.id, action: log.action, detail: log.detail }))
+  const auditRows = snapshot.auditLogs.filter((log) => changed.auditIds.includes(log.id) && log.staff === user.name).map((log) => ({ id: log.id, actor_id: user.id, action: log.action, detail: log.detail }))
   if (auditRows.length) {
     const { error } = await client.from('audit_logs').upsert(auditRows)
     if (error) throw error
