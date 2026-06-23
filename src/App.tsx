@@ -645,7 +645,7 @@ function App() {
   const selectedEvent =
     visibleEvents.find(
       (event) => event.recordId === selectedEventId || event.id === selectedEventId,
-    ) ?? visibleEvents[0]
+    )
   const selectedEventAssets =
     selectedEvent?.reservations.flatMap((reservation) =>
       reservation.selectedAssetIds.length > 0
@@ -3345,7 +3345,7 @@ function App() {
 
         {activeTab === 'events' && (
           <section className="panel-stack event-workspace">
-            {!eventDetailOpen && (
+            {(!eventDetailOpen || !selectedEvent) && (
             <section className="surface event-list-page">
               <div className="section-heading">
                 <div>
@@ -3418,7 +3418,7 @@ function App() {
             </section>
 
             )}
-            {eventDetailOpen && (
+            {eventDetailOpen && selectedEvent && (
             <section className="surface event-detail-page">
               <div className="section-heading">
                 <button aria-label="Back to events" className="icon-action back-link" onClick={() => setEventDetailOpen(false)} title="Back to events" type="button"><ArrowLeft size={19} aria-hidden="true" /></button>
