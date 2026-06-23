@@ -432,6 +432,23 @@ label {
   justify-content: flex-end;
 }
 
+.top-actions .refresh-action {
+  flex: 0 0 42px;
+  width: 42px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.refresh-action .spinning {
+  animation: refresh-spin 700ms linear infinite;
+}
+
+@keyframes refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .topbar h1 {
   margin: 4px 0 0;
   color: #111827;
@@ -4024,6 +4041,19 @@ button:not(:disabled):active,
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
   margin-top: 12px;
+}
+
+.return-summary-photos {
+  margin-bottom: 14px;
+}
+
+.return-summary-photos > strong {
+  color: #111827;
+  font-size: 0.9rem;
+}
+
+.dark-mode .return-summary-photos > strong {
+  color: #f8fafc;
 }
 
 .packing-photo {

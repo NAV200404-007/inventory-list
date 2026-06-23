@@ -16,6 +16,7 @@ import {
   Moon,
   PackageCheck,
   Plus,
+  RefreshCw,
   Search,
   ShieldCheck,
   Sun,
@@ -105,6 +106,7 @@ type EventRecord = {
   assetReturnReport?: Record<string, AssetReturnLine>
   returnReportBy?: string
   packingPhotos: PackingPhoto[]
+  returnPhotos: PackingPhoto[]
 }
 
 type NotificationRecord = {
@@ -192,6 +194,7 @@ function normalizeEventRecord(event: EventRecord & { staff?: string; recordId?: 
     packedAssetIds: event.packedAssetIds ?? {},
     checkoutApproved: event.checkoutApproved ?? false,
     packingPhotos: event.packingPhotos ?? [],
+    returnPhotos: event.returnPhotos ?? [],
     status: normalizeEventStatus(event.status),
   }
 }
@@ -368,6 +371,7 @@ function createEventDraft(events: EventRecord[]): EventRecord {
     packedAssetIds: {},
     checkoutApproved: false,
     packingPhotos: [],
+    returnPhotos: [],
   }
 }
 
@@ -558,6 +562,9 @@ function App() {
   const [editingPackingEventId, setEditingPackingEventId] = useState('')
   const [packingPhotoUploading, setPackingPhotoUploading] = useState(false)
   const [packingPhotoError, setPackingPhotoError] = useState('')
+  const [returnPhotoUploading, setReturnPhotoUploading] = useState(false)
+  const [returnPhotoError, setReturnPhotoError] = useState('')
+  const [manualRefreshLoading, setManualRefreshLoading] = useState(false)
 
   const inventoryById = useMemo(
     () => Object.fromEntries(inventory.map((item) => [item.id, item])),
@@ -727,6 +734,16 @@ function App() {
       console.error('Unable to load shared operational data', error)
     }
   }, [authenticatedUser])
+
+  const manuallyRefreshOperationalData = async () => {
+    if (manualRefreshLoading) return
+    setManualRefreshLoading(true)
+    try {
+      await refreshOperationalData()
+    } finally {
+      setManualRefreshLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!authenticatedUser || !supabase) {
@@ -1777,6 +1794,71 @@ function App() {
     }
   }
 
+  const uploadReturnPhotos = async (files: FileList | null) => {
+    if (!files || !selectedEvent || !authenticatedUser || !supabase) return
+    const selectedFiles = Array.from(files)
+    const remainingSlots = 5 - selectedEvent.returnPhotos.length
+    setReturnPhotoError('')
+
+    if (selectedEvent.status !== 'Checked Out' || portalMode !== 'employee') {
+      setReturnPhotoError('Return photos can only be added before the report is submitted.')
+      return
+    }
+    if (selectedFiles.length > remainingSlots) {
+      setReturnPhotoError(`You can add ${Math.max(remainingSlots, 0)} more photo${remainingSlots === 1 ? '' : 's'}.`)
+      return
+    }
+    const invalidFile = selectedFiles.find(
+      (file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 8 * 1024 * 1024,
+    )
+    if (invalidFile) {
+      setReturnPhotoError('Use JPG, PNG, or WebP photos up to 8 MB each.')
+      return
+    }
+
+    setReturnPhotoUploading(true)
+    try {
+      for (const file of selectedFiles) {
+        const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+        const storagePath = `${selectedEvent.recordId}/return/${crypto.randomUUID()}.${extension}`
+        const { error: uploadError } = await supabase.storage
+          .from('packing-photos')
+          .upload(storagePath, file, { contentType: file.type, upsert: false })
+        if (uploadError) throw uploadError
+
+        const { error: metadataError } = await supabase.from('event_packing_photos').insert({
+          event_id: selectedEvent.recordId,
+          uploaded_by: authenticatedUser.id,
+          storage_path: storagePath,
+          photo_type: 'return',
+        })
+        if (metadataError) {
+          await supabase.storage.from('packing-photos').remove([storagePath])
+          throw metadataError
+        }
+      }
+      await refreshOperationalData()
+    } catch (error) {
+      setReturnPhotoError(error instanceof Error ? error.message : 'Unable to upload the return photo.')
+    } finally {
+      setReturnPhotoUploading(false)
+    }
+  }
+
+  const deleteReturnPhoto = async (photo: PackingPhoto) => {
+    if (!selectedEvent || !authenticatedUser || !supabase || selectedEvent.status !== 'Checked Out') return
+    setReturnPhotoError('')
+    try {
+      const { error: storageError } = await supabase.storage.from('packing-photos').remove([photo.storagePath])
+      if (storageError) throw storageError
+      const { error: metadataError } = await supabase.from('event_packing_photos').delete().eq('id', photo.id)
+      if (metadataError) throw metadataError
+      await refreshOperationalData()
+    } catch (error) {
+      setReturnPhotoError(error instanceof Error ? error.message : 'Unable to remove the return photo.')
+    }
+  }
+
   const packEvent = (eventId: string) => {
     const event = events.find((record) => record.recordId === eventId)
     const assetKeys = event?.reservations.flatMap((reservation) =>
@@ -1927,7 +2009,7 @@ function App() {
         staff: account.name,
         eventId: selectedEvent.recordId,
         title: `Return report ready: ${selectedEvent.title}`,
-        message: `${currentStaff.name} submitted the return report for review.`,
+        message: `${currentStaff.name} submitted the return report for review${selectedEvent.returnPhotos.length ? ` with ${selectedEvent.returnPhotos.length} photo${selectedEvent.returnPhotos.length === 1 ? '' : 's'}` : ''}.`,
         read: false,
       }))
 
@@ -2445,6 +2527,9 @@ function App() {
             <h1>Event inventory</h1>
           </div>
           <div className="top-actions">
+            <button aria-label="Refresh shared data" className="icon-action refresh-action" disabled={manualRefreshLoading} onClick={() => void manuallyRefreshOperationalData()} title="Refresh shared data" type="button">
+              <RefreshCw className={manualRefreshLoading ? 'spinning' : ''} size={18} aria-hidden="true" />
+            </button>
             <div className="notification-pill">
               <Bell size={16} aria-hidden="true" />
               {unreadNotificationCount > 0
@@ -3647,6 +3732,7 @@ function App() {
                 onChange={(event) => {
                   setSelectedEventId(event.target.value)
                   setAssetReturnLines({})
+                  setReturnPhotoError('')
                 }}
               >
                 {returnEligibleEvents.map((event) => (
@@ -3716,11 +3802,55 @@ function App() {
               })}
             </div>
 
+            <section className="packing-evidence return-evidence" aria-labelledby="return-evidence-title">
+              <div className="packing-evidence-heading">
+                <div>
+                  <h3 id="return-evidence-title">Return photos</h3>
+                  <p>Attach equipment condition, damage, or packing-on-return evidence.</p>
+                </div>
+                <span>{selectedEvent.returnPhotos.length}/5</span>
+              </div>
+              {selectedEvent.returnPhotos.length > 0 ? (
+                <div className="packing-photo-grid">
+                  {selectedEvent.returnPhotos.map((photo, index) => (
+                    <figure className="packing-photo" key={photo.id}>
+                      <a href={photo.signedUrl} rel="noreferrer" target="_blank">
+                        <img alt={`Return report photo ${index + 1}`} src={photo.signedUrl} />
+                      </a>
+                      <figcaption>
+                        <span>{photo.uploadedBy}</span>
+                        <small>{photo.uploadedAt}</small>
+                      </figcaption>
+                      {portalMode === 'employee' && selectedEvent.status === 'Checked Out' && photo.uploadedById === authenticatedUser.id && (
+                        <button aria-label={`Remove return photo ${index + 1}`} className="packing-photo-delete" onClick={() => void deleteReturnPhoto(photo)} type="button">
+                          <Trash2 size={15} aria-hidden="true" />
+                        </button>
+                      )}
+                    </figure>
+                  ))}
+                </div>
+              ) : (
+                <p className="packing-evidence-empty">
+                  {portalMode === 'employee'
+                    ? 'No photos added. Add photos when equipment is damaged, missing, or needs visual proof.'
+                    : 'No return photos were submitted.'}
+                </p>
+              )}
+              {portalMode === 'employee' && selectedEvent.status === 'Checked Out' && selectedEvent.returnPhotos.length < 5 && (
+                <label className="packing-photo-upload">
+                  <Camera size={18} aria-hidden="true" />
+                  {returnPhotoUploading ? 'Uploading...' : 'Add return photos'}
+                  <input accept="image/jpeg,image/png,image/webp" capture="environment" disabled={returnPhotoUploading} multiple onChange={(event) => { void uploadReturnPhotos(event.target.files); event.target.value = '' }} type="file" />
+                </label>
+              )}
+              {returnPhotoError && <p className="form-error">{returnPhotoError}</p>}
+            </section>
+
             <button
               className="primary-action"
               disabled={
                 portalMode === 'employee'
-                  ? selectedEvent.status !== 'Checked Out' && selectedEvent.status !== 'Returned'
+                  ? (selectedEvent.status !== 'Checked Out' && selectedEvent.status !== 'Returned') || returnPhotoUploading
                   : selectedEvent.status !== 'Returned'
               }
               onClick={
@@ -3955,6 +4085,24 @@ function ReturnReportSummary({
           Ready for review
         </Badge>
       </div>
+      {event.returnPhotos.length > 0 && (
+        <div className="return-summary-photos">
+          <strong>Return photos</strong>
+          <div className="packing-photo-grid">
+            {event.returnPhotos.map((photo, index) => (
+              <figure className="packing-photo" key={photo.id}>
+                <a href={photo.signedUrl} rel="noreferrer" target="_blank">
+                  <img alt={`Return report photo ${index + 1}`} src={photo.signedUrl} />
+                </a>
+                <figcaption>
+                  <span>{photo.uploadedBy}</span>
+                  <small>{photo.uploadedAt}</small>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="return-summary-list">
         {reportLines.map(({ item, reservation, report }) => (
           <div className="return-summary-row" key={item.id}>

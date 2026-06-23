@@ -60,6 +60,14 @@ export type OperationalEvent = {
     uploadedById: string
     uploadedAt: string
   }[]
+  returnPhotos: {
+    id: string
+    storagePath: string
+    signedUrl: string
+    uploadedBy: string
+    uploadedById: string
+    uploadedAt: string
+  }[]
 }
 
 export type OperationalNotification = {
@@ -144,6 +152,7 @@ type PackingPhotoRow = {
   uploaded_by: string
   storage_path: string
   created_at: string
+  photo_type: 'packing' | 'return'
 }
 
 function localDateParts(value: string) {
@@ -176,7 +185,7 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
     client.from('event_assets').select('event_id,asset_id,packed,return_status,return_remarks'),
     client.from('notifications').select('id,recipient_id,event_id,title,message,read').order('created_at', { ascending: false }),
     client.from('audit_logs').select('id,actor_id,action,detail,created_at').order('created_at', { ascending: false }),
-    client.from('event_packing_photos').select('id,event_id,uploaded_by,storage_path,created_at').order('created_at'),
+    client.from('event_packing_photos').select('id,event_id,uploaded_by,storage_path,created_at,photo_type').order('created_at'),
   ])
 
   const profiles = requireData(results[0].data as ProfileRow[] | null, results[0].error, 'Profiles')
@@ -253,7 +262,15 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
       returnReport: Object.keys(assetReturnReport).length ? returnReport : undefined,
       assetReturnReport: Object.keys(assetReturnReport).length ? assetReturnReport : undefined,
       returnReportBy: event.return_report_by ? profileName.get(event.return_report_by) : undefined,
-      packingPhotos: packingPhotoRows.filter((photo) => photo.event_id === event.id).map((photo) => ({
+      packingPhotos: packingPhotoRows.filter((photo) => photo.event_id === event.id && photo.photo_type === 'packing').map((photo) => ({
+        id: photo.id,
+        storagePath: photo.storage_path,
+        signedUrl: packingPhotoUrls.get(photo.storage_path) ?? '',
+        uploadedBy: profileName.get(photo.uploaded_by) ?? 'Unknown',
+        uploadedById: photo.uploaded_by,
+        uploadedAt: new Date(photo.created_at).toLocaleString('en-SG'),
+      })),
+      returnPhotos: packingPhotoRows.filter((photo) => photo.event_id === event.id && photo.photo_type === 'return').map((photo) => ({
         id: photo.id,
         storagePath: photo.storage_path,
         signedUrl: packingPhotoUrls.get(photo.storage_path) ?? '',
