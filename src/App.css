@@ -1329,6 +1329,13 @@ label {
   gap: 12px;
 }
 
+.settings-message {
+  margin: -4px 4px 2px;
+  color: #475467;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .settings-row,
 .settings-password {
   display: grid;
@@ -3013,6 +3020,10 @@ button:not(:disabled):active,
 .dark-mode .return-row label,
 .dark-mode .return-row span {
   color: #aab6c7;
+}
+
+.dark-mode .settings-message {
+  color: #c7d2e3;
 }
 
 .dark-mode input,

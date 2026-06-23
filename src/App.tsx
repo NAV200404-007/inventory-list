@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   BarChart3,
   Bell,
+  BellRing,
   Building2,
   Boxes,
   CalendarDays,
@@ -28,6 +29,13 @@ import {
 import './App.css'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadOperationalData, syncInventoryData, syncOperationalData } from './lib/operationalData'
+import { compressPhoto } from './lib/imageCompression'
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  hasActivePushSubscription,
+  supportsPushNotifications,
+} from './lib/pushNotifications'
 
 type InventoryStatus =
   | 'Available'
@@ -584,6 +592,11 @@ function App() {
   const [returnPhotoUploading, setReturnPhotoUploading] = useState(false)
   const [returnPhotoError, setReturnPhotoError] = useState('')
   const [manualRefreshLoading, setManualRefreshLoading] = useState(false)
+  const [pushNotificationState, setPushNotificationState] = useState<'loading' | 'on' | 'off' | 'unsupported'>(() =>
+    supportsPushNotifications() ? 'loading' : 'unsupported',
+  )
+  const [pushNotificationMessage, setPushNotificationMessage] = useState('')
+  const [pushNotificationLoading, setPushNotificationLoading] = useState(false)
 
   useEffect(() => {
     operationalDirty.current = false
@@ -592,6 +605,14 @@ function App() {
     operationalSaveVersion.current = 0
     operationalSaveQueue.current = Promise.resolve()
   }, [authenticatedUser?.id])
+
+  useEffect(() => {
+    if (!authenticatedUser) return
+    if (!supportsPushNotifications()) return
+    void hasActivePushSubscription()
+      .then((active) => setPushNotificationState(active ? 'on' : 'off'))
+      .catch(() => setPushNotificationState('off'))
+  }, [authenticatedUser])
 
   const inventoryById = useMemo(
     () => Object.fromEntries(inventory.map((item) => [item.id, item])),
@@ -780,6 +801,27 @@ function App() {
     }
   }
 
+  const togglePushNotifications = async () => {
+    if (!supabase || !authenticatedUser || pushNotificationLoading) return
+    setPushNotificationLoading(true)
+    setPushNotificationMessage('')
+    try {
+      if (pushNotificationState === 'on') {
+        await disablePushNotifications(supabase)
+        setPushNotificationState('off')
+        setPushNotificationMessage('Push notifications are off on this device.')
+      } else {
+        await enablePushNotifications(supabase, authenticatedUser.id)
+        setPushNotificationState('on')
+        setPushNotificationMessage('Push notifications are on for this device.')
+      }
+    } catch (error) {
+      setPushNotificationMessage(error instanceof Error ? error.message : 'Unable to update push notifications.')
+    } finally {
+      setPushNotificationLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!authenticatedUser || !supabase) {
       return
@@ -850,6 +892,12 @@ function App() {
               notificationIds: changedNotificationIds,
               auditIds: changedAuditIds,
             })
+            if (changedNotificationIds.length > 0) {
+              const { error: pushError } = await client.functions.invoke('send-push-notifications', {
+                body: { notificationIds: changedNotificationIds },
+              })
+              if (pushError) console.warn('Unable to dispatch push notifications', pushError)
+            }
             if (saveVersion === operationalSaveVersion.current) {
               lastServerSnapshot.current = serializedSnapshot
               operationalDirty.current = false
@@ -998,7 +1046,14 @@ function App() {
   }
 
   const handleLogout = async () => {
-    if (supabase) await supabase.auth.signOut()
+    if (supabase) {
+      try {
+        await disablePushNotifications(supabase)
+      } catch (error) {
+        console.warn('Unable to remove this device push subscription', error)
+      }
+      await supabase.auth.signOut()
+    }
     setOperationalDataReadyFor('')
     setAuthenticatedUser(null)
     setAccounts([])
@@ -1824,21 +1879,23 @@ function App() {
       return
     }
     const invalidFile = selectedFiles.find(
-      (file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 8 * 1024 * 1024,
+      (file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 25 * 1024 * 1024,
     )
     if (invalidFile) {
-      setPackingPhotoError('Use JPG, PNG, or WebP photos up to 8 MB each.')
+      setPackingPhotoError('Use JPG, PNG, or WebP photos up to 25 MB each.')
       return
     }
 
     setPackingPhotoUploading(true)
     try {
       for (const file of selectedFiles) {
-        const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+        const uploadFile = await compressPhoto(file)
+        if (uploadFile.size > 8 * 1024 * 1024) throw new Error('A compressed photo is still larger than 8 MB.')
+        const extension = uploadFile.name.split('.').pop()?.toLowerCase() || 'jpg'
         const storagePath = `${selectedEvent.recordId}/${crypto.randomUUID()}.${extension}`
         const { error: uploadError } = await supabase.storage
           .from('packing-photos')
-          .upload(storagePath, file, { contentType: file.type, upsert: false })
+          .upload(storagePath, uploadFile, { contentType: uploadFile.type, upsert: false })
         if (uploadError) throw uploadError
 
         const { error: metadataError } = await supabase.from('event_packing_photos').insert({
@@ -1888,21 +1945,23 @@ function App() {
       return
     }
     const invalidFile = selectedFiles.find(
-      (file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 8 * 1024 * 1024,
+      (file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 25 * 1024 * 1024,
     )
     if (invalidFile) {
-      setReturnPhotoError('Use JPG, PNG, or WebP photos up to 8 MB each.')
+      setReturnPhotoError('Use JPG, PNG, or WebP photos up to 25 MB each.')
       return
     }
 
     setReturnPhotoUploading(true)
     try {
       for (const file of selectedFiles) {
-        const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+        const uploadFile = await compressPhoto(file)
+        if (uploadFile.size > 8 * 1024 * 1024) throw new Error('A compressed photo is still larger than 8 MB.')
+        const extension = uploadFile.name.split('.').pop()?.toLowerCase() || 'jpg'
         const storagePath = `${selectedEvent.recordId}/return/${crypto.randomUUID()}.${extension}`
         const { error: uploadError } = await supabase.storage
           .from('packing-photos')
-          .upload(storagePath, file, { contentType: file.type, upsert: false })
+          .upload(storagePath, uploadFile, { contentType: uploadFile.type, upsert: false })
         if (uploadError) throw uploadError
 
         const { error: metadataError } = await supabase.from('event_packing_photos').insert({
@@ -2809,6 +2868,31 @@ function App() {
                       </button>
                     </div>
 
+                    <div className="settings-row">
+                      <div>
+                        <strong>Push notifications</strong>
+                        <span>
+                          {pushNotificationState === 'unsupported'
+                            ? 'Install the app on a supported device to receive updates when it is closed.'
+                            : 'Receive assignments, approvals, packing, and return updates on this device.'}
+                        </span>
+                      </div>
+                      <button
+                        className="secondary-action"
+                        disabled={pushNotificationLoading || pushNotificationState === 'loading' || pushNotificationState === 'unsupported'}
+                        onClick={() => void togglePushNotifications()}
+                        type="button"
+                      >
+                        <BellRing size={17} aria-hidden="true" />
+                        {pushNotificationLoading
+                          ? 'Updating...'
+                          : pushNotificationState === 'on'
+                            ? 'Turn off'
+                            : 'Turn on'}
+                      </button>
+                    </div>
+                    {pushNotificationMessage && <p className="settings-message">{pushNotificationMessage}</p>}
+
                     <div className="settings-password">
                       <div>
                         <strong>Change password</strong>
@@ -3333,7 +3417,7 @@ function App() {
                     <div className="packing-evidence-heading">
                       <div>
                         <h3 id="packing-evidence-title">Packing photos</h3>
-                        <p>Evidence for employer review before checkout.</p>
+                        <p>Evidence for employer review before checkout. Photos are compressed automatically.</p>
                       </div>
                       <span>{selectedEvent.packingPhotos.length}/5</span>
                     </div>
@@ -3885,7 +3969,7 @@ function App() {
               <div className="packing-evidence-heading">
                 <div>
                   <h3 id="return-evidence-title">Return photos</h3>
-                  <p>Attach equipment condition, damage, or packing-on-return evidence.</p>
+                  <p>Attach equipment condition or damage evidence. Photos are compressed automatically.</p>
                 </div>
                 <span>{selectedEvent.returnPhotos.length}/5</span>
               </div>
