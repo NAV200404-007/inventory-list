@@ -1,4 +1,4 @@
-const CACHE_NAME = 'future-ready-inventory-v2'
+const CACHE_NAME = 'future-ready-inventory-v3'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -59,41 +59,6 @@ self.addEventListener('fetch', (event) => {
         .catch(() => cachedResponse)
 
       return cachedResponse || fetchPromise
-    }),
-  )
-})
-
-self.addEventListener('push', (event) => {
-  let payload = {}
-  try {
-    payload = event.data ? event.data.json() : {}
-  } catch {
-    payload = { body: event.data ? event.data.text() : 'You have a new inventory update.' }
-  }
-
-  event.waitUntil(
-    self.registration.showNotification(payload.title || 'Future Ready Inventory', {
-      body: payload.body || 'You have a new inventory update.',
-      icon: '/pwa-icon-192.png',
-      badge: '/pwa-icon-192.png',
-      data: { url: payload.url || '/', eventId: payload.eventId || null },
-      tag: payload.eventId ? `event-${payload.eventId}` : 'inventory-update',
-      renotify: true,
-    }),
-  )
-})
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close()
-  const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin).href
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find((client) => client.url.startsWith(self.location.origin))
-      if (existing) {
-        existing.navigate(targetUrl)
-        return existing.focus()
-      }
-      return self.clients.openWindow(targetUrl)
     }),
   )
 })

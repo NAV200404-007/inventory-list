@@ -345,18 +345,32 @@ export async function syncOperationalData(
     if (eventError) throw eventError
 
     if (user.portal === 'employer') {
-      await client.from('event_staff').delete().eq('event_id', event.recordId)
-      const staff = event.assignedEmployees.map((name) => profileId.get(name)).filter((id): id is string => Boolean(id)).map((id) => ({ event_id: event.recordId, profile_id: id }))
+      const staffIds = event.assignedEmployees.map((name) => profileId.get(name)).filter((id): id is string => Boolean(id))
+      const staff = staffIds.map((id) => ({ event_id: event.recordId, profile_id: id }))
       if (staff.length) {
-        const { error } = await client.from('event_staff').insert(staff)
+        const { error } = await client.from('event_staff').upsert(staff, { onConflict: 'event_id,profile_id' })
         if (error) throw error
       }
-      await client.from('event_requirements').delete().eq('event_id', event.recordId)
+      const { data: existingStaff, error: existingStaffError } = await client.from('event_staff').select('profile_id').eq('event_id', event.recordId)
+      if (existingStaffError) throw existingStaffError
+      const staleStaffIds = (existingStaff ?? []).map((row) => row.profile_id as string).filter((id) => !staffIds.includes(id))
+      if (staleStaffIds.length) {
+        const { error } = await client.from('event_staff').delete().eq('event_id', event.recordId).in('profile_id', staleStaffIds)
+        if (error) throw error
+      }
+
       if (event.reservations.length) {
-        const { error } = await client.from('event_requirements').insert(event.reservations.map((reservation) => ({ event_id: event.recordId, inventory_item_id: reservation.itemId, quantity: reservation.quantity })))
+        const { error } = await client.from('event_requirements').upsert(event.reservations.map((reservation) => ({ event_id: event.recordId, inventory_item_id: reservation.itemId, quantity: reservation.quantity })), { onConflict: 'event_id,inventory_item_id' })
         if (error) throw error
       }
-      await client.from('event_assets').delete().eq('event_id', event.recordId)
+      const requirementIds = event.reservations.map((reservation) => reservation.itemId)
+      const { data: existingRequirements, error: existingRequirementsError } = await client.from('event_requirements').select('inventory_item_id').eq('event_id', event.recordId)
+      if (existingRequirementsError) throw existingRequirementsError
+      const staleRequirementIds = (existingRequirements ?? []).map((row) => row.inventory_item_id as string).filter((id) => !requirementIds.includes(id))
+      if (staleRequirementIds.length) {
+        const { error } = await client.from('event_requirements').delete().eq('event_id', event.recordId).in('inventory_item_id', staleRequirementIds)
+        if (error) throw error
+      }
     }
     const allocations = event.reservations.flatMap((reservation) => reservation.selectedAssetIds.map((code) => assetId.get(code)).filter((id): id is string => Boolean(id)).map((id) => ({
       event_id: event.recordId,
@@ -371,6 +385,16 @@ export async function syncOperationalData(
     if (allocations.length) {
       const { error } = await client.from('event_assets').upsert(allocations, { onConflict: 'event_id,asset_id' })
       if (error) throw error
+    }
+    if (user.portal === 'employer') {
+      const allocationIds = allocations.map((allocation) => allocation.asset_id)
+      const { data: existingAllocations, error: existingAllocationsError } = await client.from('event_assets').select('asset_id').eq('event_id', event.recordId)
+      if (existingAllocationsError) throw existingAllocationsError
+      const staleAllocationIds = (existingAllocations ?? []).map((row) => row.asset_id as string).filter((id) => !allocationIds.includes(id))
+      if (staleAllocationIds.length) {
+        const { error } = await client.from('event_assets').delete().eq('event_id', event.recordId).in('asset_id', staleAllocationIds)
+        if (error) throw error
+      }
     }
   }
 

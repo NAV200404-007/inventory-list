@@ -1329,12 +1329,6 @@ label {
   gap: 12px;
 }
 
-.settings-message {
-  margin: -4px 4px 2px;
-  color: #475467;
-  font-size: 0.82rem;
-  font-weight: 700;
-}
 
 .settings-row,
 .settings-password {
@@ -3022,9 +3016,6 @@ button:not(:disabled):active,
   color: #aab6c7;
 }
 
-.dark-mode .settings-message {
-  color: #c7d2e3;
-}
 
 .dark-mode input,
 .dark-mode select {

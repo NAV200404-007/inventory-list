@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   BarChart3,
   Bell,
-  BellRing,
   Building2,
   Boxes,
   CalendarDays,
@@ -30,12 +29,6 @@ import './App.css'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadOperationalData, syncInventoryData, syncOperationalData } from './lib/operationalData'
 import { compressPhoto } from './lib/imageCompression'
-import {
-  disablePushNotifications,
-  enablePushNotifications,
-  hasActivePushSubscription,
-  supportsPushNotifications,
-} from './lib/pushNotifications'
 
 type InventoryStatus =
   | 'Available'
@@ -597,11 +590,6 @@ function App() {
   const [returnPhotoUploading, setReturnPhotoUploading] = useState(false)
   const [returnPhotoError, setReturnPhotoError] = useState('')
   const [manualRefreshLoading, setManualRefreshLoading] = useState(false)
-  const [pushNotificationState, setPushNotificationState] = useState<'loading' | 'on' | 'off' | 'unsupported'>(() =>
-    supportsPushNotifications() ? 'loading' : 'unsupported',
-  )
-  const [pushNotificationMessage, setPushNotificationMessage] = useState('')
-  const [pushNotificationLoading, setPushNotificationLoading] = useState(false)
   const [deletingEventId, setDeletingEventId] = useState('')
   const [deleteEventError, setDeleteEventError] = useState('')
 
@@ -613,15 +601,6 @@ function App() {
     operationalSaveQueue.current = Promise.resolve()
     deletedEventIds.current.clear()
   }, [authenticatedUser?.id])
-
-  useEffect(() => {
-    if (!authenticatedUser) return
-    if (!supportsPushNotifications()) return
-    if (!supabase) return
-    void hasActivePushSubscription(supabase, authenticatedUser.id)
-      .then((active) => setPushNotificationState(active ? 'on' : 'off'))
-      .catch(() => setPushNotificationState('off'))
-  }, [authenticatedUser])
 
   const inventoryById = useMemo(
     () => Object.fromEntries(inventory.map((item) => [item.id, item])),
@@ -810,27 +789,6 @@ function App() {
     }
   }
 
-  const togglePushNotifications = async () => {
-    if (!supabase || !authenticatedUser || pushNotificationLoading) return
-    setPushNotificationLoading(true)
-    setPushNotificationMessage('')
-    try {
-      if (pushNotificationState === 'on') {
-        await disablePushNotifications(supabase)
-        setPushNotificationState('off')
-        setPushNotificationMessage('Push notifications are off on this device.')
-      } else {
-        await enablePushNotifications(supabase, authenticatedUser.id)
-        setPushNotificationState('on')
-        setPushNotificationMessage('Push notifications are on for this device.')
-      }
-    } catch (error) {
-      setPushNotificationMessage(error instanceof Error ? error.message : 'Unable to update push notifications.')
-    } finally {
-      setPushNotificationLoading(false)
-    }
-  }
-
   useEffect(() => {
     if (!authenticatedUser || !supabase) {
       return
@@ -901,12 +859,6 @@ function App() {
               notificationIds: changedNotificationIds,
               auditIds: changedAuditIds,
             })
-            if (changedNotificationIds.length > 0) {
-              const { error: pushError } = await client.functions.invoke('send-push-notifications', {
-                body: { notificationIds: changedNotificationIds },
-              })
-              if (pushError) console.warn('Unable to dispatch push notifications', pushError)
-            }
             if (saveVersion === operationalSaveVersion.current) {
               lastServerSnapshot.current = serializedSnapshot
               operationalDirty.current = false
@@ -1055,14 +1007,7 @@ function App() {
   }
 
   const handleLogout = async () => {
-    if (supabase) {
-      try {
-        await disablePushNotifications(supabase)
-      } catch (error) {
-        console.warn('Unable to remove this device push subscription', error)
-      }
-      await supabase.auth.signOut()
-    }
+    if (supabase) await supabase.auth.signOut()
     setOperationalDataReadyFor('')
     setAuthenticatedUser(null)
     setAccounts([])
@@ -2928,31 +2873,6 @@ function App() {
                         {themeMode === 'dark' ? 'Light mode' : 'Dark mode'}
                       </button>
                     </div>
-
-                    <div className="settings-row">
-                      <div>
-                        <strong>Push notifications</strong>
-                        <span>
-                          {pushNotificationState === 'unsupported'
-                            ? 'Install the app on a supported device to receive updates when it is closed.'
-                            : 'Receive assignments, approvals, packing, and return updates on this device.'}
-                        </span>
-                      </div>
-                      <button
-                        className="secondary-action"
-                        disabled={pushNotificationLoading || pushNotificationState === 'loading' || pushNotificationState === 'unsupported'}
-                        onClick={() => void togglePushNotifications()}
-                        type="button"
-                      >
-                        <BellRing size={17} aria-hidden="true" />
-                        {pushNotificationLoading
-                          ? 'Updating...'
-                          : pushNotificationState === 'on'
-                            ? 'Turn off'
-                            : 'Turn on'}
-                      </button>
-                    </div>
-                    {pushNotificationMessage && <p className="settings-message">{pushNotificationMessage}</p>}
 
                     <div className="settings-password">
                       <div>
