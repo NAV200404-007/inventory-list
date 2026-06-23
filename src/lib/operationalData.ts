@@ -52,6 +52,14 @@ export type OperationalEvent = {
   returnReport?: Record<string, { returned: number; damaged: number; missing: number; remarks: string }>
   assetReturnReport?: Record<string, { status: ReturnStatus; remarks: string }>
   returnReportBy?: string
+  packingPhotos: {
+    id: string
+    storagePath: string
+    signedUrl: string
+    uploadedBy: string
+    uploadedById: string
+    uploadedAt: string
+  }[]
 }
 
 export type OperationalNotification = {
@@ -130,6 +138,13 @@ type NotificationRow = {
   read: boolean
 }
 type AuditRow = { id: string; actor_id: string | null; action: string; detail: string; created_at: string }
+type PackingPhotoRow = {
+  id: string
+  event_id: string
+  uploaded_by: string
+  storage_path: string
+  created_at: string
+}
 
 function localDateParts(value: string) {
   const date = new Date(value)
@@ -161,6 +176,7 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
     client.from('event_assets').select('event_id,asset_id,packed,return_status,return_remarks'),
     client.from('notifications').select('id,recipient_id,event_id,title,message,read').order('created_at', { ascending: false }),
     client.from('audit_logs').select('id,actor_id,action,detail,created_at').order('created_at', { ascending: false }),
+    client.from('event_packing_photos').select('id,event_id,uploaded_by,storage_path,created_at').order('created_at'),
   ])
 
   const profiles = requireData(results[0].data as ProfileRow[] | null, results[0].error, 'Profiles')
@@ -172,9 +188,15 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
   const eventAssets = requireData(results[6].data as EventAssetRow[] | null, results[6].error, 'Event assets')
   const notificationRows = requireData(results[7].data as NotificationRow[] | null, results[7].error, 'Notifications')
   const auditRows = requireData(results[8].data as AuditRow[] | null, results[8].error, 'Audit logs')
+  const packingPhotoRows = requireData(results[9].data as PackingPhotoRow[] | null, results[9].error, 'Packing photos')
   const profileName = new Map(profiles.map((profile) => [profile.id, profile.name]))
   const assetById = new Map(assets.map((asset) => [asset.id, asset]))
   const eventById = new Map(eventRows.map((event) => [event.id, event]))
+  const packingPhotoUrls = new Map<string, string>()
+  await Promise.all(packingPhotoRows.map(async (photo) => {
+    const { data } = await client.storage.from('packing-photos').createSignedUrl(photo.storage_path, 3600)
+    if (data?.signedUrl) packingPhotoUrls.set(photo.storage_path, data.signedUrl)
+  }))
 
   const inventory = items.map((item) => {
     const itemAssets = assets
@@ -231,6 +253,14 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
       returnReport: Object.keys(assetReturnReport).length ? returnReport : undefined,
       assetReturnReport: Object.keys(assetReturnReport).length ? assetReturnReport : undefined,
       returnReportBy: event.return_report_by ? profileName.get(event.return_report_by) : undefined,
+      packingPhotos: packingPhotoRows.filter((photo) => photo.event_id === event.id).map((photo) => ({
+        id: photo.id,
+        storagePath: photo.storage_path,
+        signedUrl: packingPhotoUrls.get(photo.storage_path) ?? '',
+        uploadedBy: profileName.get(photo.uploaded_by) ?? 'Unknown',
+        uploadedById: photo.uploaded_by,
+        uploadedAt: new Date(photo.created_at).toLocaleString('en-SG'),
+      })),
     }
   })
 
