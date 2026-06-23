@@ -558,6 +558,7 @@ function App() {
   const pendingOperationalRefresh = useRef(false)
   const operationalSaveVersion = useRef(0)
   const operationalSaveQueue = useRef<Promise<void>>(Promise.resolve())
+  const deletedEventIds = useRef(new Set<string>())
   const [inventorySyncStatus, setInventorySyncStatus] = useState<'saved' | 'editing' | 'saving' | 'error'>('saved')
   const [themeMode, setThemeMode] = useStoredState<'light' | 'dark'>('themeMode', 'light')
   const [currentStaff, setCurrentStaff] = useState<StaffUser>({
@@ -601,6 +602,8 @@ function App() {
   )
   const [pushNotificationMessage, setPushNotificationMessage] = useState('')
   const [pushNotificationLoading, setPushNotificationLoading] = useState(false)
+  const [deletingEventId, setDeletingEventId] = useState('')
+  const [deleteEventError, setDeleteEventError] = useState('')
 
   useEffect(() => {
     operationalDirty.current = false
@@ -608,6 +611,7 @@ function App() {
     pendingOperationalRefresh.current = false
     operationalSaveVersion.current = 0
     operationalSaveQueue.current = Promise.resolve()
+    deletedEventIds.current.clear()
   }, [authenticatedUser?.id])
 
   useEffect(() => {
@@ -892,7 +896,7 @@ function App() {
           operationalSyncInFlight.current = true
           try {
             await syncOperationalData(client, authenticatedUser, snapshot, {
-              eventIds: changedEventIds,
+              eventIds: changedEventIds.filter((eventId) => !deletedEventIds.current.has(eventId)),
               notificationIds: changedNotificationIds,
               auditIds: changedAuditIds,
             })
@@ -1674,9 +1678,9 @@ function App() {
     addLog('Added inventory item', `${itemToAdd.name} added with ${itemToAdd.total} total stock.`)
   }
 
-  const deleteEvent = (eventId: string) => {
+  const deleteEvent = async (eventId: string) => {
     const eventToDelete = events.find((event) => event.recordId === eventId)
-    if (!eventToDelete) {
+    if (!eventToDelete || !supabase || portalMode !== 'employer' || deletingEventId) {
       return
     }
 
@@ -1687,22 +1691,42 @@ function App() {
       return
     }
 
-    setEvents((records) => records.filter((event) => event.recordId !== eventId))
-    if (supabase) void supabase.from('events').delete().eq('id', eventId)
-    setNotifications((records) =>
-      records.filter(
-        (notification) =>
-          notification.eventId !== eventToDelete.recordId && notification.eventId !== eventToDelete.id,
-      ),
-    )
-    setSelectedEventId((currentEventId) => {
-      if (currentEventId !== eventId) {
-        return currentEventId
+    setDeletingEventId(eventId)
+    setDeleteEventError('')
+    deletedEventIds.current.add(eventId)
+    try {
+      await operationalSaveQueue.current.catch(() => undefined)
+      const { data, error } = await supabase.from('events').delete().eq('id', eventId).select('id')
+      if (error) throw error
+      if (!data?.length) throw new Error('The event could not be deleted. Refresh and check your employer access.')
+
+      const photoPaths = [...eventToDelete.packingPhotos, ...eventToDelete.returnPhotos]
+        .map((photo) => photo.storagePath)
+      if (photoPaths.length) {
+        const { error: photoError } = await supabase.storage.from('packing-photos').remove(photoPaths)
+        if (photoError) console.warn('Event deleted, but some photo files could not be removed', photoError)
       }
-      const remainingEvent = events.find((event) => event.recordId !== eventId)
-      return remainingEvent?.recordId ?? ''
-    })
-    addLog('Deleted event', `${eventToDelete.id} - ${eventToDelete.title} was deleted.`)
+
+      setEvents((records) => records.filter((event) => event.recordId !== eventId))
+      setNotifications((records) =>
+        records.filter(
+          (notification) =>
+            notification.eventId !== eventToDelete.recordId && notification.eventId !== eventToDelete.id,
+        ),
+      )
+      setSelectedEventId((currentEventId) => {
+        if (currentEventId !== eventId) return currentEventId
+        const remainingEvent = events.find((event) => event.recordId !== eventId)
+        return remainingEvent?.recordId ?? ''
+      })
+      setEventDetailOpen(false)
+      addLog('Deleted event', `${eventToDelete.id} - ${eventToDelete.title} was deleted.`)
+    } catch (error) {
+      deletedEventIds.current.delete(eventId)
+      setDeleteEventError(error instanceof Error ? error.message : 'Unable to delete this event.')
+    } finally {
+      setDeletingEventId('')
+    }
   }
 
   const deleteAccount = async (accountName: string) => {
@@ -3706,13 +3730,17 @@ function App() {
                     <ReturnReportSummary event={selectedEvent} inventoryById={inventoryById} />
                   )}
                   {portalMode === 'employer' && (
-                    <button
-                      className="delete-action"
-                      onClick={() => deleteEvent(selectedEvent.recordId)}
-                      type="button"
-                    >
-                      Delete event
-                    </button>
+                    <>
+                      <button
+                        className="delete-action"
+                        disabled={deletingEventId === selectedEvent.recordId}
+                        onClick={() => void deleteEvent(selectedEvent.recordId)}
+                        type="button"
+                      >
+                        {deletingEventId === selectedEvent.recordId ? 'Deleting...' : 'Delete event'}
+                      </button>
+                      {deleteEventError && <p className="form-error">{deleteEventError}</p>}
+                    </>
                   )}
                 </>
               )}
