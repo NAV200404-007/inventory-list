@@ -13,10 +13,19 @@ export function supportsPushNotifications() {
   return import.meta.env.PROD && window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 }
 
-export async function hasActivePushSubscription() {
+export async function hasActivePushSubscription(client: SupabaseClient, userId: string) {
   if (!supportsPushNotifications()) return false
   const registration = await navigator.serviceWorker.ready
-  return Boolean(await registration.pushManager.getSubscription())
+  const subscription = await registration.pushManager.getSubscription()
+  if (!subscription) return false
+  const { data, error } = await client
+    .from('push_subscriptions')
+    .select('endpoint')
+    .eq('endpoint', subscription.endpoint)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  return Boolean(data)
 }
 
 export async function enablePushNotifications(client: SupabaseClient, userId: string) {
@@ -26,7 +35,21 @@ export async function enablePushNotifications(client: SupabaseClient, userId: st
 
   const registration = await navigator.serviceWorker.ready
   const existing = await registration.pushManager.getSubscription()
-  const subscription = existing ?? await registration.pushManager.subscribe({
+  let subscription = existing
+  if (existing) {
+    const { data, error } = await client
+      .from('push_subscriptions')
+      .select('endpoint')
+      .eq('endpoint', existing.endpoint)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (error) throw error
+    if (!data) {
+      await existing.unsubscribe()
+      subscription = null
+    }
+  }
+  subscription = subscription ?? await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
   })
@@ -42,7 +65,12 @@ export async function enablePushNotifications(client: SupabaseClient, userId: st
     auth: json.keys.auth,
     user_agent: navigator.userAgent,
   }, { onConflict: 'endpoint' })
-  if (error) throw error
+  if (error) {
+    if (/row.level security/i.test(error.message)) {
+      throw new Error('This device was linked to another account. Its old subscription was reset; tap Turn on once more.')
+    }
+    throw error
+  }
 }
 
 export async function disablePushNotifications(client: SupabaseClient) {

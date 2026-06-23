@@ -617,7 +617,8 @@ function App() {
   useEffect(() => {
     if (!authenticatedUser) return
     if (!supportsPushNotifications()) return
-    void hasActivePushSubscription()
+    if (!supabase) return
+    void hasActivePushSubscription(supabase, authenticatedUser.id)
       .then((active) => setPushNotificationState(active ? 'on' : 'off'))
       .catch(() => setPushNotificationState('off'))
   }, [authenticatedUser])
