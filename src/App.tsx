@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   ArrowLeft,
+  Archive,
   BarChart3,
   Bell,
   Building2,
@@ -9,6 +10,7 @@ import {
   Camera,
   CheckCircle2,
   ClipboardList,
+  Download,
   Laptop,
   LockKeyhole,
   LogOut,
@@ -29,6 +31,7 @@ import './App.css'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadOperationalData, syncInventoryData, syncOperationalData } from './lib/operationalData'
 import { compressPhoto } from './lib/imageCompression'
+import { exportPackingListPdf, exportReturnReportPdf } from './lib/reportExport'
 
 type InventoryStatus =
   | 'Available'
@@ -592,6 +595,9 @@ function App() {
   const [manualRefreshLoading, setManualRefreshLoading] = useState(false)
   const [deletingEventId, setDeletingEventId] = useState('')
   const [deleteEventError, setDeleteEventError] = useState('')
+  const [archiveSearch, setArchiveSearch] = useState('')
+  const [exportingReport, setExportingReport] = useState('')
+  const [reportExportError, setReportExportError] = useState('')
 
   useEffect(() => {
     operationalDirty.current = false
@@ -617,6 +623,12 @@ function App() {
       : navItems
   const assignedEvents = events.filter((event) => event.assignedEmployees.includes(currentStaff.name))
   const visibleEvents = portalMode === 'employee' ? assignedEvents : events
+  const archivedEvents = visibleEvents.filter((event) => event.status === 'Closed')
+  const filteredArchivedEvents = archivedEvents.filter((event) =>
+    `${event.id} ${event.title} ${event.location} ${event.assignedEmployees.join(' ')}`
+      .toLowerCase()
+      .includes(archiveSearch.trim().toLowerCase()),
+  )
   const returnEligibleEvents = visibleEvents.filter((event) =>
     portalMode === 'employee'
       ? event.status === 'Checked Out' || event.status === 'Returned'
@@ -786,6 +798,34 @@ function App() {
       await refreshOperationalData()
     } finally {
       setManualRefreshLoading(false)
+    }
+  }
+
+  const downloadPackingList = async (event: EventRecord) => {
+    const exportId = `${event.recordId}:packing`
+    if (exportingReport) return
+    setExportingReport(exportId)
+    setReportExportError('')
+    try {
+      await exportPackingListPdf(event, inventoryById)
+    } catch (error) {
+      setReportExportError(error instanceof Error ? error.message : 'Unable to export the packing list.')
+    } finally {
+      setExportingReport('')
+    }
+  }
+
+  const downloadReturnReport = async (event: EventRecord) => {
+    const exportId = `${event.recordId}:return`
+    if (exportingReport || !event.returnReport) return
+    setExportingReport(exportId)
+    setReportExportError('')
+    try {
+      await exportReturnReportPdf(event, inventoryById)
+    } catch (error) {
+      setReportExportError(error instanceof Error ? error.message : 'Unable to export the return report.')
+    } finally {
+      setExportingReport('')
     }
   }
 
@@ -3088,6 +3128,63 @@ function App() {
                 </>
               )}
             </div>
+            {!profileSettingsOpen && (
+              <section className="surface archive-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2><Archive size={20} aria-hidden="true" /> Event archive</h2>
+                    <p>Closed events and their final packing and return records.</p>
+                  </div>
+                  <span className="archive-count">{archivedEvents.length} closed</span>
+                </div>
+                <label className="search-box archive-search">
+                  <Search size={17} aria-hidden="true" />
+                  <input
+                    placeholder="Search archived events"
+                    value={archiveSearch}
+                    onChange={(event) => setArchiveSearch(event.target.value)}
+                  />
+                </label>
+                <div className="archive-list">
+                  {filteredArchivedEvents.length === 0 && (
+                    <div className="empty-state">
+                      {archivedEvents.length ? 'No archived events match your search.' : 'Closed events will appear here.'}
+                    </div>
+                  )}
+                  {filteredArchivedEvents.map((event) => (
+                    <article className="archive-row" key={event.recordId}>
+                      <button
+                        className="archive-event-main"
+                        onClick={() => {
+                          setSelectedEventId(event.recordId)
+                          setEventDetailOpen(true)
+                          setActiveTab('events')
+                        }}
+                        type="button"
+                      >
+                        <span>{event.id}</span>
+                        <strong>{event.title}</strong>
+                        <small>{event.location} - {formatEventSchedule(event)}</small>
+                      </button>
+                      <TeamChips employees={event.assignedEmployees} />
+                      <div className="archive-actions">
+                        <button disabled={Boolean(exportingReport)} onClick={() => void downloadPackingList(event)} type="button">
+                          <Download size={15} aria-hidden="true" />
+                          Packing PDF
+                        </button>
+                        {event.returnReport && (
+                          <button disabled={Boolean(exportingReport)} onClick={() => void downloadReturnReport(event)} type="button">
+                            <Download size={15} aria-hidden="true" />
+                            Return PDF
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                {reportExportError && <p className="form-error">{reportExportError}</p>}
+              </section>
+            )}
           </section>
         )}
 
@@ -3352,6 +3449,26 @@ function App() {
                     <Badge tone={eventStatusTone(selectedEvent.status)}>
                       {eventStatusLabel(selectedEvent.status)}
                     </Badge>
+                    <button
+                      className="report-action"
+                      disabled={Boolean(exportingReport)}
+                      onClick={() => void downloadPackingList(selectedEvent)}
+                      type="button"
+                    >
+                      <Download size={16} aria-hidden="true" />
+                      {exportingReport === `${selectedEvent.recordId}:packing` ? 'Exporting...' : 'Packing PDF'}
+                    </button>
+                    {selectedEvent.returnReport && (
+                      <button
+                        className="report-action"
+                        disabled={Boolean(exportingReport)}
+                        onClick={() => void downloadReturnReport(selectedEvent)}
+                        type="button"
+                      >
+                        <Download size={16} aria-hidden="true" />
+                        {exportingReport === `${selectedEvent.recordId}:return` ? 'Exporting...' : 'Return PDF'}
+                      </button>
+                    )}
                     {portalMode === 'employer' && (
                       <button
                         className="icon-action"
@@ -3369,6 +3486,7 @@ function App() {
                   </div>
                 )}
               </div>
+              {reportExportError && <p className="form-error">{reportExportError}</p>}
 
               {selectedEvent && (
                 <>
