@@ -302,7 +302,8 @@
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -1564,7 +1565,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 42px;
   border: 1px solid rgba(255, 255, 255, 0.64);
@@ -1578,8 +1580,16 @@ select {
   -webkit-backdrop-filter: blur(14px);
 }
 
+textarea {
+  min-height: 104px;
+  padding: 12px 13px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
 input:focus,
 select:focus,
+textarea:focus,
 button:focus-visible {
   outline: 3px solid rgba(79, 127, 163, 0.22);
   outline-offset: 2px;
@@ -4078,6 +4088,36 @@ button:not(:disabled):active,
   font-weight: 600;
 }
 
+.event-comments-panel {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 14px;
+  padding: 14px;
+  border: 1px solid #dbe5f1;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.event-comments-panel > div {
+  display: grid;
+  gap: 2px;
+}
+
+.event-comments-panel strong {
+  color: #111827;
+  font-size: 0.94rem;
+}
+
+.event-comments-panel span,
+.event-comments-panel p,
+.event-comments-text {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .event-time-editor {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4349,8 +4389,20 @@ button:not(:disabled):active,
 
 .dark-mode .event-schedule,
 .dark-mode .return-trace span,
-.dark-mode .asset-return-heading span {
+.dark-mode .asset-return-heading span,
+.dark-mode .event-comments-panel span,
+.dark-mode .event-comments-panel p,
+.dark-mode .event-comments-text {
   color: #c7d2e3;
+}
+
+.dark-mode .event-comments-panel {
+  border-color: rgba(148, 163, 184, 0.34);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.dark-mode .event-comments-panel strong {
+  color: #f8fafc;
 }
 
 .dark-mode .asset-check-row,

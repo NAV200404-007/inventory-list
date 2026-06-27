@@ -15,6 +15,7 @@ type ExportEvent = {
   title: string
   type: string
   location: string
+  comments?: string
   start: string
   startTime: string
   end: string
@@ -114,17 +115,21 @@ function addReportHeader(
   document.setDrawColor(0, 122, 255)
   document.setLineWidth(0.7)
   document.line(16, 75, pageWidth - 16, 75)
+  const eventDetails = [
+    ['Event', `${event.id} - ${event.title}`],
+    ['Type / location', `${event.type} / ${event.location}`],
+    ['Schedule', displaySchedule(event)],
+    ['Assigned staff', event.assignedEmployees.join(', ') || 'Unassigned'],
+    ['Status', event.status],
+  ]
+  if (event.comments?.trim()) {
+    eventDetails.push(['Employer comments', event.comments.trim()])
+  }
 
   autoTable(document, {
     startY: 80,
     theme: 'plain',
-    body: [
-      ['Event', `${event.id} - ${event.title}`],
-      ['Type / location', `${event.type} / ${event.location}`],
-      ['Schedule', displaySchedule(event)],
-      ['Assigned staff', event.assignedEmployees.join(', ') || 'Unassigned'],
-      ['Status', event.status],
-    ],
+    body: eventDetails,
     columnStyles: {
       0: { cellWidth: 38, fontStyle: 'bold', textColor: [55, 65, 81] },
       1: { textColor: [17, 24, 39] },

@@ -93,6 +93,7 @@ type EventRecord = {
   title: string
   type: string
   location: string
+  comments: string
   start: string
   startTime: string
   end: string
@@ -194,6 +195,7 @@ function normalizeEventRecord(event: EventRecord & { staff?: string; recordId?: 
     ...event,
     recordId: event.recordId ?? createEventRecordId(),
     assignedEmployees,
+    comments: event.comments ?? '',
     startTime: event.startTime ?? '09:00',
     endTime: event.endTime ?? '17:00',
     packingProgress: event.packingProgress ?? {},
@@ -381,6 +383,7 @@ function createEventDraft(events: EventRecord[]): EventRecord {
     title: '',
     type: 'VEX IQ workshop',
     location: '',
+    comments: '',
     start: date,
     startTime: '09:00',
     end: date,
@@ -1444,6 +1447,14 @@ function App() {
     )
   }
 
+  const updateEventComments = (eventId: string, value: string) => {
+    setEvents((records) =>
+      records.map((record) =>
+        record.recordId === eventId ? { ...record, comments: value } : record,
+      ),
+    )
+  }
+
   const rebuildEventReservationAssets = (event: EventRecord, reservations: Reservation[]) =>
     reservations.map((reservation) => {
       const item = inventoryById[reservation.itemId]
@@ -1796,6 +1807,7 @@ function App() {
       ...newEvent,
       recordId: createEventRecordId(),
       id: newEvent.id.trim() || `EVT-${Date.now()}`,
+      comments: newEvent.comments.trim(),
       status: 'Reserved',
       reservations: reservationsWithAssets,
       packingProgress: {},
@@ -3250,6 +3262,15 @@ function App() {
                       Event location
                       <input value={newEvent.location} onChange={(event) => setNewEvent((record) => ({ ...record, location: event.target.value }))} />
                     </label>
+                    <label className="full-field">
+                      Employer comments
+                      <textarea
+                        maxLength={500}
+                        placeholder="Add setup notes, special instructions, access details, or things staff should remember."
+                        value={newEvent.comments}
+                        onChange={(event) => setNewEvent((record) => ({ ...record, comments: event.target.value }))}
+                      />
+                    </label>
                     <label>
                       Start date
                       <input type="date" value={newEvent.start} onChange={(event) => setNewEvent((record) => ({ ...record, start: event.target.value }))} />
@@ -3338,6 +3359,12 @@ function App() {
                     <strong>Assigned staff</strong>
                     <TeamChips employees={newEvent.assignedEmployees} />
                   </div>
+                  {newEvent.comments.trim() && (
+                    <div className="review-section">
+                      <strong>Employer comments</strong>
+                      <p className="event-comments-text">{newEvent.comments.trim()}</p>
+                    </div>
+                  )}
                   <div className="review-equipment">
                     {plannerLines.map((line) => (
                       <div key={line.item.id}>
@@ -3493,6 +3520,24 @@ function App() {
                   <EventProgress status={selectedEvent.status} />
                   <p className="event-schedule">{formatEventSchedule(selectedEvent)}</p>
                   <TeamChips employees={selectedEvent.assignedEmployees} />
+                  {(selectedEvent.comments.trim() || selectedEventEditMode) && (
+                    <section className="event-comments-panel" aria-label="Employer comments">
+                      <div>
+                        <strong>Employer comments</strong>
+                        <span>Extra notes for the assigned team</span>
+                      </div>
+                      {portalMode === 'employer' && selectedEventEditMode ? (
+                        <textarea
+                          maxLength={500}
+                          placeholder="Add setup notes, access details, or reminders for employees."
+                          value={selectedEvent.comments}
+                          onChange={(event) => updateEventComments(selectedEvent.recordId, event.target.value)}
+                        />
+                      ) : (
+                        <p>{selectedEvent.comments}</p>
+                      )}
+                    </section>
+                  )}
                   <div
                     className="packing-progress"
                     aria-label={`${selectedEventPackedCount} of ${selectedEventPackingTotal} packing items checked`}
