@@ -1113,15 +1113,34 @@ function App() {
       return []
     }
     const available = availableForWindow(reservation.itemId, newEvent.start, newEvent.end)
+    const usedAssetIds = new Set(usedAssetIdsForItem(events, reservation.itemId, newEvent.start, newEvent.end))
+    const duplicateAssetIds = reservation.selectedAssetIds.filter(
+      (assetId, index, assetIds) => assetId && assetIds.indexOf(assetId) !== index,
+    )
+    const invalidAssetIds = reservation.selectedAssetIds.filter(
+      (assetId) =>
+        assetId &&
+        (!item.assetIds.includes(assetId) ||
+          usedAssetIds.has(assetId) ||
+          Boolean(item.assetConditions?.[assetId]) ||
+          duplicateAssetIds.includes(assetId)),
+    )
     return [{
       ...reservation,
       item,
       available,
+      invalidAssetIds,
+      selectedCount: reservation.selectedAssetIds.filter(Boolean).length,
       shortage: Math.max(0, reservation.quantity - available),
     }]
   })
 
   const hasShortage = plannerLines.some((line) => line.shortage > 0)
+  const hasPlannerAssetIssue = plannerLines.some(
+    (line) =>
+      line.quantity > 0 &&
+      (line.selectedCount !== line.quantity || line.invalidAssetIds.length > 0),
+  )
   const eventIdAlreadyExists = events.some(
     (event) => event.id.toLowerCase() === newEvent.id.trim().toLowerCase(),
   )
@@ -1140,8 +1159,10 @@ function App() {
       : plannerStep === 2
         ? newEvent.assignedEmployees.length > 0
         : plannerStep === 3
-          ? newEvent.reservations.some((reservation) => reservation.quantity > 0) && !hasShortage
-          : !hasShortage
+          ? newEvent.reservations.some((reservation) => reservation.quantity > 0) &&
+            !hasShortage &&
+            !hasPlannerAssetIssue
+          : !hasShortage && !hasPlannerAssetIssue
   const activeEvents = events.filter((event) => event.status !== 'Closed')
   const visibleActiveEvents = visibleEvents.filter((event) => event.status !== 'Closed')
   const filteredVisibleEvents = visibleEvents.filter((event) => {
@@ -1208,11 +1229,22 @@ function App() {
     setInventoryQuantityError('')
     setNewEvent((event) => ({
       ...event,
-      reservations: event.reservations.map((reservation) =>
-        reservation.itemId === itemId
-          ? { ...reservation, quantity }
-          : reservation,
-      ),
+      reservations: event.reservations.map((reservation) => {
+        if (reservation.itemId !== itemId) {
+          return reservation
+        }
+        const item = inventoryById[itemId]
+        const existingIds = reservation.selectedAssetIds.slice(0, quantity)
+        const existingSet = new Set(existingIds)
+        const fillIds = item
+          ? pickAssetIds(item, quantity, events, event.start, event.end).filter((assetId) => !existingSet.has(assetId))
+          : []
+        return {
+          ...reservation,
+          quantity,
+          selectedAssetIds: [...existingIds, ...fillIds].slice(0, quantity),
+        }
+      }),
     }))
   }
 
@@ -1223,7 +1255,33 @@ function App() {
 
     setNewEvent((event) => ({
       ...event,
-      reservations: [...event.reservations, { itemId, quantity: 1, selectedAssetIds: [] }],
+      reservations: [
+        ...event.reservations,
+        {
+          itemId,
+          quantity: 1,
+          selectedAssetIds: inventoryById[itemId]
+            ? pickAssetIds(inventoryById[itemId], 1, events, event.start, event.end)
+            : [],
+        },
+      ],
+    }))
+  }
+
+  const updateDraftReservationAssetId = (itemId: string, assetIndex: number, value: string) => {
+    setNewEvent((event) => ({
+      ...event,
+      reservations: event.reservations.map((reservation) => {
+        if (reservation.itemId !== itemId) {
+          return reservation
+        }
+        const selectedAssetIds = Array.from(
+          { length: reservation.quantity },
+          (_, index) => reservation.selectedAssetIds[index] ?? '',
+        )
+        selectedAssetIds[assetIndex] = value
+        return { ...reservation, selectedAssetIds }
+      }),
     }))
   }
 
@@ -1794,16 +1852,9 @@ function App() {
     const reservationsWithAssets = newEvent.reservations
       .filter((itemReservation) => itemReservation.quantity > 0)
       .map((itemReservation) => {
-        const item = inventoryById[itemReservation.itemId]
         return {
           ...itemReservation,
-          selectedAssetIds: pickAssetIds(
-            item,
-            itemReservation.quantity,
-            events,
-            newEvent.start,
-            newEvent.end,
-          ),
+          selectedAssetIds: itemReservation.selectedAssetIds.slice(0, itemReservation.quantity),
         }
       })
 
@@ -3341,7 +3392,63 @@ function App() {
                         <div>
                           <strong>{line.item.name}</strong>
                           <span>{line.available} available</span>
-                          <AssetIdPreview assetIds={pickAssetIds(line.item, line.quantity, events, newEvent.start, newEvent.end)} />
+                          <div className="draft-asset-selector" aria-label={`${line.item.name} item IDs`}>
+                            {Array.from({ length: line.quantity }, (_, assetIndex) => {
+                              const selectedAssetIds = Array.from(
+                                { length: line.quantity },
+                                (_, index) => line.selectedAssetIds[index] ?? '',
+                              )
+                              const selectedAssetId = selectedAssetIds[assetIndex] ?? ''
+                              const usedAssetIds = new Set(
+                                usedAssetIdsForItem(events, line.item.id, newEvent.start, newEvent.end),
+                              )
+                              const availableAssetIds = line.item.assetIds.filter(
+                                (assetId) =>
+                                  assetId === selectedAssetId ||
+                                  (!usedAssetIds.has(assetId) && !line.item.assetConditions?.[assetId]),
+                              )
+                              const isDuplicate = Boolean(
+                                selectedAssetId &&
+                                selectedAssetIds.filter((assetId) => assetId === selectedAssetId).length > 1
+                              )
+                              const isInvalid = line.invalidAssetIds.includes(selectedAssetId)
+                              return (
+                                <label className={isInvalid || isDuplicate ? 'invalid' : ''} key={`${line.item.id}-${assetIndex}`}>
+                                  <span>{line.item.name} {assetIndex + 1}</span>
+                                  <select
+                                    aria-invalid={isInvalid || isDuplicate}
+                                    value={selectedAssetId}
+                                    onChange={(event) =>
+                                      updateDraftReservationAssetId(line.item.id, assetIndex, event.target.value)
+                                    }
+                                  >
+                                    <option value="">Choose item ID</option>
+                                    {selectedAssetId && !availableAssetIds.includes(selectedAssetId) && (
+                                      <option value={selectedAssetId}>{selectedAssetId} - unavailable</option>
+                                    )}
+                                    {availableAssetIds.map((assetId) => (
+                                      <option
+                                        disabled={
+                                          selectedAssetIds.includes(assetId) &&
+                                          assetId !== selectedAssetId
+                                        }
+                                        key={assetId}
+                                        value={assetId}
+                                      >
+                                        {assetId}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              )
+                            })}
+                          </div>
+                          {line.quantity > 0 && line.selectedCount !== line.quantity && (
+                            <p className="form-error compact-error">Choose exact item IDs for all {line.quantity} {line.item.name} items.</p>
+                          )}
+                          {line.invalidAssetIds.length > 0 && (
+                            <p className="form-error compact-error">Some selected IDs are unavailable, duplicated, damaged, missing, or already reserved.</p>
+                          )}
                         </div>
                         <label>
                           Quantity
@@ -3379,7 +3486,10 @@ function App() {
                   <div className="review-equipment">
                     {plannerLines.map((line) => (
                       <div key={line.item.id}>
-                        <span>{line.item.name}</span>
+                        <span>
+                          {line.item.name}
+                          <small>{line.selectedAssetIds.join(', ')}</small>
+                        </span>
                         <strong>{line.quantity}</strong>
                       </div>
                     ))}
