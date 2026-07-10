@@ -685,6 +685,9 @@ function App() {
     selectedEventPackingTotal > 0
       ? Math.round((selectedEventPackedCount / selectedEventPackingTotal) * 100)
       : 0
+  const selectedEventCanPack =
+    selectedEvent?.status === 'Reserved' &&
+    (portalMode === 'employer' || selectedEvent.assignedEmployees.includes(currentStaff.name))
   const activeNavIndex = Math.max(
     allowedNavItems.findIndex((item) => item.id === activeTab),
     0,
@@ -1278,13 +1281,14 @@ function App() {
   }
 
   const togglePackedAsset = (eventId: string, itemId: string, assetId: string, packed: boolean) => {
-    if (portalMode !== 'employee') return
     setEvents((records) =>
       records.map((record) => {
+        const canPack =
+          portalMode === 'employer' || record.assignedEmployees.includes(currentStaff.name)
         if (
           record.recordId !== eventId ||
           record.status !== 'Reserved' ||
-          !record.assignedEmployees.includes(currentStaff.name)
+          !canPack
         ) return record
         const reservation = record.reservations.find((entry) => entry.itemId === itemId)
         const assetKeys = reservation?.selectedAssetIds.length
@@ -1836,12 +1840,11 @@ function App() {
   }
 
   const markAllPackingChecks = (eventId: string) => {
-    if (portalMode !== 'employee') return
     setEvents((records) =>
-      records.map((record) =>
-        record.recordId === eventId &&
-        record.status === 'Reserved' &&
-        record.assignedEmployees.includes(currentStaff.name)
+      records.map((record) => {
+        const canPack =
+          portalMode === 'employer' || record.assignedEmployees.includes(currentStaff.name)
+        return record.recordId === eventId && record.status === 'Reserved' && canPack
           ? {
               ...record,
               packedAssetIds: Object.fromEntries(
@@ -1856,8 +1859,8 @@ function App() {
                 record.reservations.map((reservation) => [reservation.itemId, true]),
               ),
             }
-          : record,
-      ),
+          : record
+      }),
     )
   }
 
@@ -1896,7 +1899,9 @@ function App() {
     const remainingSlots = 5 - selectedEvent.packingPhotos.length
     setPackingPhotoError('')
 
-    if (selectedEvent.status !== 'Reserved' || portalMode !== 'employee') {
+    const canUploadPackingPhoto =
+      portalMode === 'employer' || selectedEvent.assignedEmployees.includes(currentStaff.name)
+    if (selectedEvent.status !== 'Reserved' || !canUploadPackingPhoto) {
       setPackingPhotoError('Packing photos can only be added while packing is in progress.')
       return
     }
@@ -2030,11 +2035,11 @@ function App() {
         ? reservation.selectedAssetIds
         : [reservation.itemId + ':untracked'],
     ) ?? []
+    const canPack = Boolean(event && (portalMode === 'employer' || event.assignedEmployees.includes(currentStaff.name)))
     if (
       !event ||
-      portalMode !== 'employee' ||
+      !canPack ||
       event.status !== 'Reserved' ||
-      !event.assignedEmployees.includes(currentStaff.name) ||
       event.packingPhotos.length === 0 ||
       assetKeys.length === 0 ||
       !assetKeys.every((assetId) => event.packedAssetIds[assetId])
@@ -2043,7 +2048,7 @@ function App() {
     }
 
     const employerNotifications = accounts
-      .filter((account) => account.portal === 'employer')
+      .filter((account) => account.portal === 'employer' && account.name !== currentStaff.name)
       .map((account) => ({
         id: createRecordId(),
         staff: account.name,
@@ -2076,8 +2081,14 @@ function App() {
           : record,
       ),
     )
-    setNotifications((records) => [...employerNotifications, ...records])
-    setCheckoutMessage('Message sent. Employer has been notified that equipment is packed and ready.')
+    if (employerNotifications.length) {
+      setNotifications((records) => [...employerNotifications, ...records])
+    }
+    setCheckoutMessage(
+      portalMode === 'employer'
+        ? 'Packing marked ready. You can approve checkout when ready.'
+        : 'Message sent. Employer has been notified that equipment is packed and ready.',
+    )
     addLog('Packed equipment', `${event.title} equipment marked as packed and ready.`)
   }
 
@@ -3587,12 +3598,12 @@ function App() {
                       </div>
                     ) : (
                       <p className="packing-evidence-empty">
-                        {portalMode === 'employee'
+                        {selectedEventCanPack
                           ? 'Add at least one photo of the packed equipment to continue.'
                           : 'The assigned staff have not added packing evidence yet.'}
                       </p>
                     )}
-                    {portalMode === 'employee' && selectedEvent.status === 'Reserved' && selectedEvent.packingPhotos.length < 5 && (
+                    {selectedEventCanPack && selectedEvent.packingPhotos.length < 5 && (
                       <label className="packing-photo-upload">
                         <Camera size={18} aria-hidden="true" />
                         {packingPhotoUploading ? 'Uploading...' : 'Add packing photos'}
@@ -3601,7 +3612,7 @@ function App() {
                     )}
                     {packingPhotoError && <p className="form-error">{packingPhotoError}</p>}
                   </section>
-                  {portalMode === 'employee' && selectedEvent.status === 'Reserved' && (
+                  {selectedEventCanPack && (
                       <button className="secondary-action bulk-action" onClick={() => markAllPackingChecks(selectedEvent.recordId)} type="button">
                         <CheckCircle2 size={17} aria-hidden="true" />
                         Check all items
@@ -3727,7 +3738,7 @@ function App() {
                                 className={'asset-check-row ' + (portalMode === 'employer' ? 'employer-view' : 'employee-view') + (selectedEventInvalidAssetIds.includes(assetId) ? ' invalid' : '')}
                                 key={assetId + assetIndex}
                               >
-                                {portalMode === 'employee' && (
+                                {selectedEventCanPack && (
                                   <input aria-label={'Pack ' + assetId} checked={selectedEvent.packedAssetIds[assetId] ?? false} disabled={selectedEvent.status !== 'Reserved'} type="checkbox" onChange={(event) => togglePackedAsset(selectedEvent.recordId, reservation.itemId, assetId, event.target.checked)} />
                                 )}
                                 {reservation.selectedAssetIds.length ? (
@@ -3750,7 +3761,7 @@ function App() {
                     })}
                   </div>
 
-                  {portalMode === 'employee' && selectedEvent.status === 'Reserved' && (
+                  {selectedEventCanPack && (
                     <div className="action-row">
                       <button className="primary-action" disabled={!selectedEventAllPacked || !selectedEventHasPackingPhoto || packingPhotoUploading} onClick={() => packEvent(selectedEvent.recordId)} type="button">
                         <PackageCheck size={18} aria-hidden="true" />
