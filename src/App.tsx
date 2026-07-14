@@ -288,6 +288,56 @@ function makeAssetPrefix(value: string) {
   )
 }
 
+function normalizeInventoryItem(item: InventoryItem): InventoryItem {
+  const total = Math.max(0, Number.isInteger(item.total) ? item.total : 0)
+  const prefix = makeAssetPrefix(item.assetIds[0]?.split('-')[0] ?? item.name ?? item.id)
+  const uniqueIds: string[] = []
+  for (const assetId of item.assetIds) {
+    const normalizedId = assetId.trim().toUpperCase()
+    if (normalizedId && !uniqueIds.includes(normalizedId)) {
+      uniqueIds.push(normalizedId)
+    }
+    if (uniqueIds.length >= total) {
+      break
+    }
+  }
+  let nextNumber = 1
+  while (uniqueIds.length < total) {
+    const nextId = `${prefix}-${String(nextNumber).padStart(3, '0')}`
+    if (!uniqueIds.includes(nextId)) {
+      uniqueIds.push(nextId)
+    }
+    nextNumber += 1
+  }
+  const activeIdSet = new Set(uniqueIds)
+  const assetConditions = Object.fromEntries(
+    Object.entries(item.assetConditions ?? {})
+      .filter(([assetId]) => activeIdSet.has(assetId))
+      .map(([assetId, condition]) => [assetId, condition]),
+  )
+  const damaged = Math.min(
+    total,
+    Math.max(0, Number.isInteger(item.damaged) ? item.damaged : 0),
+  )
+  const missing = Math.min(
+    Math.max(0, total - damaged),
+    Math.max(0, Number.isInteger(item.missing) ? item.missing : 0),
+  )
+
+  return {
+    ...item,
+    total,
+    damaged,
+    missing,
+    assetIds: uniqueIds,
+    assetConditions,
+  }
+}
+
+function normalizeInventory(items: InventoryItem[]) {
+  return items.map((item) => normalizeInventoryItem(item))
+}
+
 const initialInventory: InventoryItem[] = [
   {
     id: 'vex-iq-kit',
@@ -552,6 +602,9 @@ function App() {
   const lastServerSnapshot = useRef('')
   const lastInventorySnapshot = useRef('')
   const inventoryDirty = useRef(false)
+  const inventorySyncInFlight = useRef(false)
+  const inventorySaveVersion = useRef(0)
+  const inventorySaveQueue = useRef<Promise<void>>(Promise.resolve())
   const operationalDirty = useRef(false)
   const operationalSyncInFlight = useRef(false)
   const pendingOperationalRefresh = useRef(false)
@@ -771,7 +824,9 @@ function App() {
         pendingOperationalRefresh.current = true
         return
       }
-      const loadedInventory = snapshot.inventory.length > 0 ? snapshot.inventory : initialInventory
+      const loadedInventory = normalizeInventory(
+        (snapshot.inventory.length > 0 ? snapshot.inventory : initialInventory) as InventoryItem[],
+      )
       const loadedEvents = snapshot.events.map((event) => normalizeEventRecord(event as EventRecord))
       lastServerSnapshot.current = JSON.stringify({
         inventory: [],
@@ -780,7 +835,7 @@ function App() {
         auditLogs: snapshot.auditLogs,
       })
       if (!inventoryDirty.current) {
-        lastInventorySnapshot.current = JSON.stringify(snapshot.inventory)
+        lastInventorySnapshot.current = JSON.stringify(loadedInventory)
         setInventory(loadedInventory)
       }
       setEvents(loadedEvents)
@@ -929,21 +984,36 @@ function App() {
 
   useEffect(() => {
     if (!authenticatedUser || operationalDataReadyFor !== authenticatedUser.id || !supabase) return
-    const serializedInventory = JSON.stringify(inventory)
+    const normalizedInventory = normalizeInventory(inventory)
+    const serializedInventory = JSON.stringify(normalizedInventory)
     if (serializedInventory === lastInventorySnapshot.current) return
     const client = supabase
     const timer = window.setTimeout(() => {
+      const saveVersion = inventorySaveVersion.current + 1
+      inventorySaveVersion.current = saveVersion
       setInventorySyncStatus('saving')
-      lastInventorySnapshot.current = serializedInventory
-      void syncInventoryData(client, inventory)
+      inventorySyncInFlight.current = true
+      inventorySaveQueue.current = inventorySaveQueue.current
+        .catch(() => undefined)
+        .then(() => syncInventoryData(client, normalizedInventory))
         .then(() => {
-          inventoryDirty.current = false
-          setInventorySyncStatus('saved')
+          if (saveVersion === inventorySaveVersion.current) {
+            lastInventorySnapshot.current = serializedInventory
+            inventoryDirty.current = false
+            setInventorySyncStatus('saved')
+          }
         })
         .catch((error) => {
-          lastInventorySnapshot.current = ''
-          setInventorySyncStatus('error')
+          if (saveVersion === inventorySaveVersion.current) {
+            lastInventorySnapshot.current = ''
+            setInventorySyncStatus('error')
+          }
           console.error('Unable to save inventory', error)
+        })
+        .finally(() => {
+          if (saveVersion === inventorySaveVersion.current) {
+            inventorySyncInFlight.current = false
+          }
         })
     }, 450)
     return () => window.clearTimeout(timer)
@@ -1628,7 +1698,7 @@ function App() {
 
         const quantityValue = nextQuantity ?? 0
 
-        return {
+        return normalizeInventoryItem({
           ...item,
           [field]: isQuantityField ? quantityValue : value,
           assetIds:
@@ -1641,7 +1711,7 @@ function App() {
                   )[index],
                 )
               : item.assetIds,
-        }
+        })
       }),
     )
   }
@@ -4101,6 +4171,17 @@ function App() {
                         }}
                       />
                     </label>
+                    <button
+                      className="inventory-apply-button"
+                      disabled={
+                        inventoryTotalDrafts[item.id] === undefined ||
+                        inventoryTotalDrafts[item.id] === String(item.total)
+                      }
+                      onClick={() => commitInventoryTotal(item)}
+                      type="button"
+                    >
+                      Apply
+                    </button>
                     <strong>{getUsable(item)} usable</strong>
                   </div>
                   <div className="reserved-cell">
