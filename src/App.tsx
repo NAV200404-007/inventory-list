@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
+  AlertCircle,
   ArrowLeft,
   Archive,
   BarChart3,
@@ -131,6 +132,12 @@ type AuditLog = {
   action: string
   detail: string
   time: string
+}
+
+type ToastRecord = {
+  id: string
+  tone: 'success' | 'error' | 'info'
+  message: string
 }
 
 type StaffUser = {
@@ -654,6 +661,8 @@ function App() {
   const [archiveSearch, setArchiveSearch] = useState('')
   const [exportingReport, setExportingReport] = useState('')
   const [reportExportError, setReportExportError] = useState('')
+  const [toasts, setToasts] = useState<ToastRecord[]>([])
+  const [busyActions, setBusyActions] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     operationalDirty.current = false
@@ -663,6 +672,37 @@ function App() {
     operationalSaveQueue.current = Promise.resolve()
     deletedEventIds.current.clear()
   }, [authenticatedUser?.id])
+
+  const showToast = (message: string, tone: ToastRecord['tone'] = 'success') => {
+    const id = createRecordId()
+    setToasts((records) => [...records.slice(-2), { id, tone, message }])
+    window.setTimeout(() => {
+      setToasts((records) => records.filter((toast) => toast.id !== id))
+    }, 3200)
+  }
+
+  const runAction = async (
+    actionKey: string,
+    action: () => void | Promise<void>,
+    messages?: { success?: string; error?: string },
+  ) => {
+    if (busyActions[actionKey]) return
+    setBusyActions((records) => ({ ...records, [actionKey]: true }))
+    try {
+      await action()
+      if (messages?.success) showToast(messages.success, 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : messages?.error ?? 'Action failed. Try again.'
+      showToast(message, 'error')
+      throw error
+    } finally {
+      setBusyActions((records) => {
+        const next = { ...records }
+        delete next[actionKey]
+        return next
+      })
+    }
+  }
 
   const inventoryById = useMemo(
     () => Object.fromEntries(inventory.map((item) => [item.id, item])),
@@ -857,6 +897,9 @@ function App() {
     setManualRefreshLoading(true)
     try {
       await refreshOperationalData()
+      showToast('Shared data refreshed.', 'success')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to refresh shared data.', 'error')
     } finally {
       setManualRefreshLoading(false)
     }
@@ -998,15 +1041,20 @@ function App() {
         .then(() => syncInventoryData(client, normalizedInventory))
         .then(() => {
           if (saveVersion === inventorySaveVersion.current) {
+            const shouldToastSaved = inventoryDirty.current
             lastInventorySnapshot.current = serializedInventory
             inventoryDirty.current = false
             setInventorySyncStatus('saved')
+            if (shouldToastSaved) {
+              showToast('Inventory saved.', 'success')
+            }
           }
         })
         .catch((error) => {
           if (saveVersion === inventorySaveVersion.current) {
             lastInventorySnapshot.current = ''
             setInventorySyncStatus('error')
+            showToast(error instanceof Error ? error.message : 'Inventory could not be saved.', 'error')
           }
           console.error('Unable to save inventory', error)
         })
@@ -1744,6 +1792,7 @@ function App() {
       return
     }
     updateInventoryItem(item.id, 'total', quantity)
+    showToast(`${item.name} total updated to ${quantity}.`, 'success')
     setInventoryTotalDrafts((records) => {
       const next = { ...records }
       delete next[item.id]
@@ -1805,6 +1854,7 @@ function App() {
     setNewInventoryUnit('unit')
     setInventoryFormError('')
     addLog('Added inventory item', `${itemToAdd.name} added with ${itemToAdd.total} total stock.`)
+    showToast(`${itemToAdd.name} added to inventory.`, 'success')
   }
 
   const deleteEvent = async (eventId: string) => {
@@ -1850,9 +1900,11 @@ function App() {
       })
       setEventDetailOpen(false)
       addLog('Deleted event', `${eventToDelete.id} - ${eventToDelete.title} was deleted.`)
+      showToast(`${eventToDelete.title} deleted.`, 'success')
     } catch (error) {
       deletedEventIds.current.delete(eventId)
       setDeleteEventError(error instanceof Error ? error.message : 'Unable to delete this event.')
+      showToast(error instanceof Error ? error.message : 'Unable to delete this event.', 'error')
     } finally {
       setDeletingEventId('')
     }
@@ -1958,6 +2010,7 @@ function App() {
       `${eventToAdd.id} assigned to ${eventToAdd.assignedEmployees.join(', ') || 'no employees'} at ${eventToAdd.location}.`,
     )
     setNewEvent(createEventDraft([...events, eventToAdd]))
+    showToast(`${eventToAdd.title} reserved and assigned.`, 'success')
   }
 
   const markAllPackingChecks = (eventId: string) => {
@@ -2211,6 +2264,7 @@ function App() {
         : 'Message sent. Employer has been notified that equipment is packed and ready.',
     )
     addLog('Packed equipment', `${event.title} equipment marked as packed and ready.`)
+    showToast('Packing marked ready.', 'success')
   }
 
   const approveCheckoutEvent = (eventId: string) => {
@@ -2228,6 +2282,7 @@ function App() {
     setNotifications((records) => [...employeeNotifications, ...records])
     setCheckoutMessage('Checkout approved. Assigned employees have been notified.')
     addLog('Approved checkout', event.title + ' is ready for employee checkout.')
+    showToast('Checkout approved.', 'success')
   }
 
   const checkoutEvent = (eventId: string) => {
@@ -2257,6 +2312,7 @@ function App() {
     setNotifications((records) => [...employerNotifications, ...records])
     setCheckoutMessage('Items checked out. Employer has been notified.')
     addLog('Checked out equipment', event.title + ' equipment moved to Checked Out.')
+    showToast('Items checked out.', 'success')
   }
 
   const submitReturnReport = () => {
@@ -2328,6 +2384,7 @@ function App() {
     addLog('Submitted return report', `${selectedEvent.title} return report submitted for employer review.`)
     setAssetReturnLines({})
     setActiveTab('events')
+    showToast('Return report submitted.', 'success')
   }
 
   const setAssetReturnValue = (
@@ -2528,6 +2585,7 @@ function App() {
       'Closed event',
       `${selectedEvent.title} reviewed and closed with return notes for ${selectedEvent.reservations.length} item groups.`,
     )
+    showToast(`${selectedEvent.title} closed.`, 'success')
   }
 
   const reviewReturnReport = () => {
@@ -2547,6 +2605,7 @@ function App() {
     ))
     setNotifications((records) => [...employeeNotifications, ...records])
     addLog('Reviewed return report', `${selectedEvent.title} return report approved for closure.`)
+    showToast('Return report approved.', 'success')
   }
 
   const statusForItem = (item: InventoryItem): InventoryStatus => {
@@ -2784,6 +2843,20 @@ function App() {
 
   return (
     <main className={`app-shell ${themeMode === 'dark' ? 'dark-mode' : ''}`}>
+      <div className="toast-stack" aria-live="polite" aria-atomic="true">
+        {toasts.map((toast) => (
+          <div className={`app-toast ${toast.tone}`} key={toast.id}>
+            {toast.tone === 'success' ? (
+              <CheckCircle2 size={17} aria-hidden="true" />
+            ) : toast.tone === 'error' ? (
+              <AlertCircle size={17} aria-hidden="true" />
+            ) : (
+              <Bell size={17} aria-hidden="true" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+        ))}
+      </div>
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
           <img
@@ -3573,7 +3646,15 @@ function App() {
               {plannerStep < 4 ? (
                 <button className="primary-action" disabled={!plannerStepValid} onClick={() => setPlannerStep((plannerStep + 1) as 1 | 2 | 3 | 4)} type="button">Continue</button>
               ) : (
-                <button className="primary-action" disabled={!plannerStepValid} onClick={confirmEvent} type="button"><CheckCircle2 size={18} aria-hidden="true" />Confirm reservation</button>
+                <button
+                  className="primary-action"
+                  disabled={!plannerStepValid || Boolean(busyActions.confirmEvent)}
+                  onClick={() => void runAction('confirmEvent', confirmEvent)}
+                  type="button"
+                >
+                  <CheckCircle2 size={18} aria-hidden="true" />
+                  {busyActions.confirmEvent ? 'Confirming...' : 'Confirm reservation'}
+                </button>
               )}
             </div>
           </section>
@@ -3800,7 +3881,7 @@ function App() {
                     )}
                   {portalMode === 'employer' && selectedEventEditMode && (
                     <div className="packing-edit-panel">
-                      <button className="secondary-action" onClick={() => refreshEventAssetIds(selectedEvent.recordId)} type="button">
+                      <button className="secondary-action" onClick={() => { refreshEventAssetIds(selectedEvent.recordId); showToast('Available item IDs reassigned.', 'success') }} type="button">
                         <Boxes size={17} aria-hidden="true" />
                         Auto-assign available IDs
                       </button>
@@ -3943,17 +4024,29 @@ function App() {
 
                   {selectedEventCanPack && (
                     <div className="action-row">
-                      <button className="primary-action" disabled={!selectedEventAllPacked || !selectedEventHasPackingPhoto || packingPhotoUploading} onClick={() => packEvent(selectedEvent.recordId)} type="button">
+                      <button
+                        className="primary-action"
+                        disabled={!selectedEventAllPacked || !selectedEventHasPackingPhoto || packingPhotoUploading || Boolean(busyActions[`pack:${selectedEvent.recordId}`])}
+                        onClick={() => void runAction(`pack:${selectedEvent.recordId}`, () => packEvent(selectedEvent.recordId))}
+                        type="button"
+                      >
                         <PackageCheck size={18} aria-hidden="true" />
-                        Mark packed and ready
+                        {busyActions[`pack:${selectedEvent.recordId}`] ? 'Marking...' : 'Mark packed and ready'}
                       </button>
                     </div>
                   )}
                   {portalMode === 'employee' && selectedEvent.status === 'Packed' && (
                     <div className="action-row">
-                      <button className="primary-action" disabled={!selectedEvent.checkoutApproved} onClick={() => checkoutEvent(selectedEvent.recordId)} type="button">
+                      <button
+                        className="primary-action"
+                        disabled={!selectedEvent.checkoutApproved || Boolean(busyActions[`checkout:${selectedEvent.recordId}`])}
+                        onClick={() => void runAction(`checkout:${selectedEvent.recordId}`, () => checkoutEvent(selectedEvent.recordId))}
+                        type="button"
+                      >
                         <Truck size={18} aria-hidden="true" />
-                        {selectedEvent.checkoutApproved ? 'Check out items' : 'Waiting for employer approval'}
+                        {busyActions[`checkout:${selectedEvent.recordId}`]
+                          ? 'Checking out...'
+                          : selectedEvent.checkoutApproved ? 'Check out items' : 'Waiting for employer approval'}
                       </button>
                     </div>
                   )}
@@ -3967,9 +4060,16 @@ function App() {
                   )}
                   {portalMode === 'employer' && selectedEvent.status === 'Packed' && (
                     <div className="action-row">
-                      <button className="primary-action" disabled={selectedEvent.checkoutApproved || !selectedEventHasPackingPhoto} onClick={() => approveCheckoutEvent(selectedEvent.recordId)} type="button">
+                      <button
+                        className="primary-action"
+                        disabled={selectedEvent.checkoutApproved || !selectedEventHasPackingPhoto || Boolean(busyActions[`approve-checkout:${selectedEvent.recordId}`])}
+                        onClick={() => void runAction(`approve-checkout:${selectedEvent.recordId}`, () => approveCheckoutEvent(selectedEvent.recordId))}
+                        type="button"
+                      >
                         <Truck size={18} aria-hidden="true" />
-                        {selectedEvent.checkoutApproved
+                        {busyActions[`approve-checkout:${selectedEvent.recordId}`]
+                          ? 'Approving...'
+                          : selectedEvent.checkoutApproved
                           ? 'Checkout approved'
                           : selectedEventHasPackingPhoto
                             ? 'Approve checkout'
@@ -3991,9 +4091,14 @@ function App() {
                   {portalMode === 'employee' && selectedEvent.status === 'Returned' && (
                     <div className="action-row">
                       {selectedEvent.returnReviewed ? (
-                        <button className="primary-action" onClick={closeEvent} type="button">
+                        <button
+                          className="primary-action"
+                          disabled={Boolean(busyActions[`close:${selectedEvent.recordId}`])}
+                          onClick={() => void runAction(`close:${selectedEvent.recordId}`, closeEvent)}
+                          type="button"
+                        >
                           <CheckCircle2 size={18} aria-hidden="true" />
-                          Close event
+                          {busyActions[`close:${selectedEvent.recordId}`] ? 'Closing...' : 'Close event'}
                         </button>
                       ) : (
                         <p className="workflow-waiting">Return report submitted. Waiting for employer review.</p>
@@ -4009,7 +4114,7 @@ function App() {
                       <button
                         className="delete-action"
                         disabled={deletingEventId === selectedEvent.recordId}
-                        onClick={() => void deleteEvent(selectedEvent.recordId)}
+                        onClick={() => void runAction(`delete:${selectedEvent.recordId}`, () => deleteEvent(selectedEvent.recordId))}
                         type="button"
                       >
                         {deletingEventId === selectedEvent.recordId ? 'Deleting...' : 'Delete event'}
@@ -4119,9 +4224,14 @@ function App() {
                       onChange={(event) => setNewInventoryUnit(event.target.value)}
                     />
                   </label>
-                  <button className="secondary-action" onClick={addInventoryItem} type="button">
+                  <button
+                    className="secondary-action"
+                    disabled={Boolean(busyActions.addInventory)}
+                    onClick={() => void runAction('addInventory', addInventoryItem)}
+                    type="button"
+                  >
                     <Plus size={17} aria-hidden="true" />
-                    Add item
+                    {busyActions.addInventory ? 'Adding...' : 'Add item'}
                   </button>
                 </div>
                 {inventoryFormError && <p className="form-error">{inventoryFormError}</p>}
@@ -4175,12 +4285,13 @@ function App() {
                       className="inventory-apply-button"
                       disabled={
                         inventoryTotalDrafts[item.id] === undefined ||
-                        inventoryTotalDrafts[item.id] === String(item.total)
+                        inventoryTotalDrafts[item.id] === String(item.total) ||
+                        Boolean(busyActions[`inventory-total:${item.id}`])
                       }
-                      onClick={() => commitInventoryTotal(item)}
+                      onClick={() => void runAction(`inventory-total:${item.id}`, () => commitInventoryTotal(item))}
                       type="button"
                     >
-                      Apply
+                      {busyActions[`inventory-total:${item.id}`] ? 'Applying...' : 'Apply'}
                     </button>
                     <strong>{getUsable(item)} usable</strong>
                   </div>
@@ -4379,20 +4490,27 @@ function App() {
                 className="primary-action"
                 disabled={
                   portalMode === 'employee'
-                    ? (selectedEvent.status !== 'Checked Out' && (selectedEvent.status !== 'Returned' || !selectedEvent.returnReviewed)) || returnPhotoUploading
-                    : selectedEvent.status !== 'Returned'
+                    ? (selectedEvent.status !== 'Checked Out' && (selectedEvent.status !== 'Returned' || !selectedEvent.returnReviewed)) ||
+                      returnPhotoUploading ||
+                      Boolean(busyActions[`return-action:${selectedEvent.recordId}`])
+                    : selectedEvent.status !== 'Returned' || Boolean(busyActions[`return-action:${selectedEvent.recordId}`])
                 }
-                onClick={
-                  portalMode === 'employee' && selectedEvent.status === 'Checked Out'
-                    ? submitReturnReport
-                    : portalMode === 'employer' && !selectedEvent.returnReviewed
-                      ? reviewReturnReport
-                      : closeEvent
+                onClick={() =>
+                  void runAction(
+                    `return-action:${selectedEvent.recordId}`,
+                    portalMode === 'employee' && selectedEvent.status === 'Checked Out'
+                      ? submitReturnReport
+                      : portalMode === 'employer' && !selectedEvent.returnReviewed
+                        ? reviewReturnReport
+                        : closeEvent,
+                  )
                 }
                 type="button"
               >
                 <PackageCheck size={18} aria-hidden="true" />
-                {portalMode === 'employee' && selectedEvent.status === 'Checked Out'
+                {busyActions[`return-action:${selectedEvent.recordId}`]
+                  ? 'Working...'
+                  : portalMode === 'employee' && selectedEvent.status === 'Checked Out'
                   ? 'Submit return report'
                   : portalMode === 'employer' && !selectedEvent.returnReviewed
                     ? 'Approve return report'
