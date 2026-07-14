@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
-  AlertCircle,
   ArrowLeft,
   Archive,
   BarChart3,
@@ -12,7 +11,6 @@ import {
   CheckCircle2,
   ClipboardList,
   Download,
-  Laptop,
   LockKeyhole,
   LogOut,
   Menu,
@@ -29,205 +27,65 @@ import {
   Wrench,
 } from 'lucide-react'
 import './App.css'
+import { Badge } from './components/Badge'
+import { AuthLoadingScreen, AuthScreen } from './components/AuthScreen'
+import { EventProgress, EventSummary, FlowStep, ReturnReportSummary, TeamChips } from './components/EventViews'
+import { AssetIdPreview, InventoryIcon } from './components/InventoryViews'
+import { ToastStack } from './components/ToastStack'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadOperationalData, syncInventoryData, syncOperationalData } from './lib/operationalData'
 import { compressPhoto } from './lib/imageCompression'
 import { exportPackingListPdf, exportReturnReportPdf } from './lib/reportExport'
-
-type InventoryStatus =
-  | 'Available'
-  | 'Reserved'
-  | 'In Use'
-  | 'Damaged'
-  | 'Missing'
-
-type EventStatus = 'Draft' | 'Reserved' | 'Packed' | 'Checked Out' | 'Returned' | 'Closed'
-type Role = 'Employer' | 'Inventory Manager' | 'Employee'
-type PortalMode = 'employer' | 'employee'
-
-type AssetCondition = {
-  status: 'Damaged' | 'Missing'
-  remarks: string
-  eventId: string
-  eventTitle: string
-  reportedBy: string
-}
-
-type InventoryItem = {
-  id: string
-  name: string
-  category: string
-  total: number
-  damaged: number
-  missing: number
-  location: string
-  unit: string
-  assetIds: string[]
-  assetConditions?: Record<string, AssetCondition>
-}
-
-type Reservation = {
-  itemId: string
-  quantity: number
-  selectedAssetIds: string[]
-}
-
-type AssetReturnStatus = 'Returned' | 'Missing' | 'Damaged'
-
-type AssetReturnLine = {
-  status: AssetReturnStatus
-  remarks: string
-}
-
-type PackingPhoto = {
-  id: string
-  storagePath: string
-  signedUrl: string
-  uploadedBy: string
-  uploadedById: string
-  uploadedAt: string
-}
-
-type EventRecord = {
-  recordId: string
-  id: string
-  title: string
-  type: string
-  location: string
-  comments: string
-  start: string
-  startTime: string
-  end: string
-  endTime: string
-  staff?: string
-  assignedEmployees: string[]
-  status: EventStatus
-  reservations: Reservation[]
-  packingProgress: Record<string, boolean>
-  packedAssetIds: Record<string, boolean>
-  packedBy?: string
-  checkoutApproved: boolean
-  checkedOutBy?: string
-  returnReport?: Record<string, ReturnLine>
-  assetReturnReport?: Record<string, AssetReturnLine>
-  returnReportBy?: string
-  returnReviewed: boolean
-  returnReviewedBy?: string
-  packingPhotos: PackingPhoto[]
-  returnPhotos: PackingPhoto[]
-}
-
-type NotificationRecord = {
-  id: string
-  staff: string
-  eventId: string
-  title: string
-  message: string
-  read: boolean
-}
-
-type AuditLog = {
-  id: string
-  staff: string
-  action: string
-  detail: string
-  time: string
-}
-
-type ToastRecord = {
-  id: string
-  tone: 'success' | 'error' | 'info'
-  message: string
-}
-
-type StaffUser = {
-  name: string
-  role: Role
-}
-
-type LoginAccount = StaffUser & {
-  id: string
-  email: string
-  portal: PortalMode
-}
-
-type ReturnLine = {
-  returned: number
-  damaged: number
-  missing: number
-  remarks: string
-}
-
-type TabId = 'dashboard' | 'planner' | 'events' | 'inventory' | 'returns' | 'audit' | 'flow' | 'profile'
+import {
+  changedRecordIds,
+  createEventRecordId,
+  createRecordId,
+  dateValue,
+  eventSyncSignature,
+  normalizeEventRecord,
+  overlaps,
+} from './lib/eventDomain'
+import {
+  getUsable,
+  makeAssetPrefix,
+  normalizeInventory,
+  normalizeInventoryItem,
+  numberedIds,
+  pickAssetIds,
+  slugify,
+  usedAssetIdsForItem,
+} from './lib/inventoryDomain'
+import {
+  assetJourneyTone,
+  eventStatusLabel,
+  eventStatusTone,
+  formatEventSchedule,
+  inventoryStatusTone,
+} from './lib/eventPresentation'
+import type {
+  AssetReturnLine,
+  AssetReturnStatus,
+  AuditLog,
+  EventRecord,
+  EventStatus,
+  InventoryItem,
+  InventoryStatus,
+  LoginAccount,
+  NotificationRecord,
+  PackingPhoto,
+  PortalMode,
+  Reservation,
+  Role,
+  StaffUser,
+  TabId,
+  ToastRecord,
+} from './types'
 
 const defaultLoginAccounts: LoginAccount[] = []
 const demoAccountNames = new Set(['Grace Wong', 'Ben Lim', 'Aisha Tan'])
 const demoEventIds = new Set(['EVT-2026-001', 'EVT-2026-002', 'EVT-2026-003'])
 
 const storagePrefix = 'event-inventory-system:'
-
-function normalizeEventStatus(status: string): EventStatus {
-  if (status === 'In Use') return 'Checked Out'
-  if (status === 'Completed') return 'Closed'
-  if (
-    status === 'Draft' ||
-    status === 'Reserved' ||
-    status === 'Packed' ||
-    status === 'Checked Out' ||
-    status === 'Returned' ||
-    status === 'Closed'
-  ) {
-    return status
-  }
-  return 'Draft'
-}
-
-function createEventRecordId() {
-  return crypto.randomUUID()
-}
-
-function createRecordId() {
-  return crypto.randomUUID()
-}
-
-function normalizeEventRecord(event: EventRecord & { staff?: string; recordId?: string }) {
-  const assignedEmployees =
-    event.assignedEmployees?.length
-      ? event.assignedEmployees
-      : event.staff && event.staff !== 'Unassigned'
-        ? [event.staff]
-        : []
-
-  return {
-    ...event,
-    recordId: event.recordId ?? createEventRecordId(),
-    assignedEmployees,
-    comments: event.comments ?? '',
-    startTime: event.startTime ?? '09:00',
-    endTime: event.endTime ?? '17:00',
-    packingProgress: event.packingProgress ?? {},
-    packedAssetIds: event.packedAssetIds ?? {},
-    checkoutApproved: event.checkoutApproved ?? false,
-    packingPhotos: event.packingPhotos ?? [],
-    returnPhotos: event.returnPhotos ?? [],
-    returnReviewed: event.returnReviewed ?? false,
-    status: normalizeEventStatus(event.status),
-  }
-}
-
-function eventSyncSignature(event: EventRecord) {
-  const { packingPhotos: _packingPhotos, returnPhotos: _returnPhotos, ...persistentEvent } = event
-  void _packingPhotos
-  void _returnPhotos
-  return JSON.stringify(persistentEvent)
-}
-
-function changedRecordIds<T extends { id: string }>(current: T[], previous: T[]) {
-  const previousById = new Map(previous.map((record) => [record.id, JSON.stringify(record)]))
-  return current
-    .filter((record) => previousById.get(record.id) !== JSON.stringify(record))
-    .map((record) => record.id)
-}
 
 function readStoredValue<T>(key: string, fallback: T) {
   try {
@@ -269,80 +127,6 @@ function useStoredState<T>(key: string, fallback: T) {
   }, [key, value])
 
   return [value, setValue] as const
-}
-
-function numberedIds(prefix: string, count: number) {
-  return Array.from({ length: count }, (_, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`)
-}
-
-function slugify(value: string) {
-  return (
-    value
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '') || `item-${Date.now()}`
-  )
-}
-
-function makeAssetPrefix(value: string) {
-  return (
-    value
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, '')
-      .slice(0, 8) || 'ITEM'
-  )
-}
-
-function normalizeInventoryItem(item: InventoryItem): InventoryItem {
-  const total = Math.max(0, Number.isInteger(item.total) ? item.total : 0)
-  const prefix = makeAssetPrefix(item.assetIds[0]?.split('-')[0] ?? item.name ?? item.id)
-  const uniqueIds: string[] = []
-  for (const assetId of item.assetIds) {
-    const normalizedId = assetId.trim().toUpperCase()
-    if (normalizedId && !uniqueIds.includes(normalizedId)) {
-      uniqueIds.push(normalizedId)
-    }
-    if (uniqueIds.length >= total) {
-      break
-    }
-  }
-  let nextNumber = 1
-  while (uniqueIds.length < total) {
-    const nextId = `${prefix}-${String(nextNumber).padStart(3, '0')}`
-    if (!uniqueIds.includes(nextId)) {
-      uniqueIds.push(nextId)
-    }
-    nextNumber += 1
-  }
-  const activeIdSet = new Set(uniqueIds)
-  const assetConditions = Object.fromEntries(
-    Object.entries(item.assetConditions ?? {})
-      .filter(([assetId]) => activeIdSet.has(assetId))
-      .map(([assetId, condition]) => [assetId, condition]),
-  )
-  const damaged = Math.min(
-    total,
-    Math.max(0, Number.isInteger(item.damaged) ? item.damaged : 0),
-  )
-  const missing = Math.min(
-    Math.max(0, total - damaged),
-    Math.max(0, Number.isInteger(item.missing) ? item.missing : 0),
-  )
-
-  return {
-    ...item,
-    total,
-    damaged,
-    missing,
-    assetIds: uniqueIds,
-    assetConditions,
-  }
-}
-
-function normalizeInventory(items: InventoryItem[]) {
-  return items.map((item) => normalizeInventoryItem(item))
 }
 
 const initialInventory: InventoryItem[] = [
@@ -469,10 +253,6 @@ const navItems: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: 'profile', label: 'Profile', icon: Menu },
 ]
 
-function dateValue(date: string) {
-  return new Date(`${date}T00:00:00`).getTime()
-}
-
 function parseWholeNumber(value: string) {
   const trimmedValue = value.trim()
   if (trimmedValue === '') {
@@ -497,47 +277,6 @@ function passwordValidationMessage(password: string) {
   return ''
 }
 
-function overlaps(startA: string, endA: string, startB: string, endB: string) {
-  return dateValue(startA) <= dateValue(endB) && dateValue(startB) <= dateValue(endA)
-}
-
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat('en', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(new Date(`${date}T00:00:00`))
-}
-
-function formatEventSchedule(event: Pick<EventRecord, 'start' | 'startTime' | 'end' | 'endTime'>) {
-  return formatDate(event.start) + ', ' + event.startTime + ' to ' + formatDate(event.end) + ', ' + event.endTime
-}
-
-function getUsable(item: InventoryItem) {
-  return Math.max(0, item.total - item.damaged - item.missing)
-}
-
-const eventFlowSteps = [
-  { key: 'Draft', label: 'Draft' },
-  { key: 'Reserved', label: 'Reserved' },
-  { key: 'Packed', label: 'Packed' },
-  { key: 'Checked Out', label: 'Checked out' },
-  { key: 'Returned', label: 'Returned' },
-  { key: 'Closed', label: 'Closed' },
-] as const
-
-function eventStatusLabel(status: EventStatus) {
-  if (status === 'Returned') return 'Return report submitted'
-  return status
-}
-
-function eventStatusTone(status: EventStatus) {
-  if (status === 'Closed') return 'neutral'
-  if (status === 'Packed') return 'success'
-  if (status === 'Checked Out' || status === 'Returned') return 'warning'
-  return 'info'
-}
-
 function assetJourneyStatus(event: EventRecord, assetId: string) {
   const returnedStatus = event.assetReturnReport?.[assetId]?.status
   if (returnedStatus) return returnedStatus
@@ -546,43 +285,6 @@ function assetJourneyStatus(event: EventRecord, assetId: string) {
   return 'Assigned'
 }
 
-function assetJourneyTone(status: string) {
-  if (status === 'Returned' || status === 'Packed') return 'success'
-  if (status === 'Damaged') return 'warning'
-  if (status === 'Missing') return 'danger'
-  if (status === 'Checked out') return 'info'
-  return 'neutral'
-}
-
-function eventStepIndex(status: EventStatus) {
-  if (status === 'Draft') return 0
-  if (status === 'Reserved') return 1
-  if (status === 'Packed') return 2
-  if (status === 'Checked Out') return 3
-  if (status === 'Returned') return 4
-  return 5
-}
-
-function usedAssetIdsForItem(events: EventRecord[], itemId: string, start: string, end: string) {
-  return events
-    .filter((event) => event.status !== 'Closed' && overlaps(start, end, event.start, event.end))
-    .flatMap((event) => event.reservations)
-    .filter((reservation) => reservation.itemId === itemId)
-    .flatMap((reservation) => reservation.selectedAssetIds)
-}
-
-function pickAssetIds(
-  item: InventoryItem,
-  quantity: number,
-  events: EventRecord[],
-  start: string,
-  end: string,
-) {
-  const used = new Set(usedAssetIdsForItem(events, item.id, start, end))
-  return item.assetIds
-    .filter((assetId) => !used.has(assetId) && !item.assetConditions?.[assetId])
-    .slice(0, quantity)
-}
 
 function App() {
   const [accounts, setAccounts] = useState<LoginAccount[]>(defaultLoginAccounts)
@@ -2628,235 +2330,40 @@ function App() {
     return 'Available'
   }
 
-  if (authLoading) {
-    return (
-      <main className={'login-shell ' + (themeMode === 'dark' ? 'dark-mode' : '')}>
-        <section className="login-panel"><p className="login-copy">Connecting securely...</p></section>
-      </main>
-    )
-  }
+  if (authLoading) return <AuthLoadingScreen themeMode={themeMode} />
 
   if (!authenticatedUser) {
     return (
-      <main className={`login-shell ${themeMode === 'dark' ? 'dark-mode' : ''}`}>
-        <section className="login-panel">
-          <div className="brand login-brand">
-            <img
-              alt="Future Ready Academy Inventory"
-              className="brand-logo"
-              src="/app-logo.png"
-            />
-          </div>
-
-          <div>
-            <span className="eyebrow">Role-based access</span>
-            <h1>Sign in to continue</h1>
-            <p className="login-copy">
-              Employer users can create and assign events. Employee users see assigned tasks,
-              notifications, packing lists, and returns.
-            </p>
-          </div>
-
-          <div className="auth-mode-switcher" aria-label="Login or create account">
-            <button
-              className={authView === 'login' ? 'active' : ''}
-              onClick={() => setAuthView('login')}
-              type="button"
-            >
-              Login
-            </button>
-            <button
-              className={authView === 'register' ? 'active' : ''}
-              onClick={() => setAuthView('register')}
-              type="button"
-            >
-              Create account
-            </button>
-          </div>
-
-          {authView === 'login' && (
-            <>
-              <div className="login-role-switcher">
-                <button
-                  className={loginPortal === 'employer' ? 'active' : ''}
-                  onClick={() => handlePortalChoice('employer')}
-                  type="button"
-                >
-                  <Building2 size={17} aria-hidden="true" />
-                  Employer
-                </button>
-                <button
-                  className={loginPortal === 'employee' ? 'active' : ''}
-                  onClick={() => handlePortalChoice('employee')}
-                  type="button"
-                >
-                  <Bell size={17} aria-hidden="true" />
-                  Employee
-                </button>
-              </div>
-
-              <form
-                className="login-form"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  handleLogin()
-                }}
-              >
-                <label>
-                  Email
-                  <input
-                    autoComplete="email"
-                    placeholder="name@company.com"
-                    type="email"
-                    value={loginEmail}
-                    onChange={(event) => {
-                      setLoginEmail(event.target.value)
-                      setLoginError('')
-                    }}
-                  />
-                </label>
-
-                <label>
-                  Password
-                  <input
-                    autoComplete="current-password"
-                    minLength={6}
-                    placeholder="Enter password"
-                    type="password"
-                    value={loginPassword}
-                    onChange={(event) => {
-                      setLoginPassword(event.target.value)
-                      setLoginError('')
-                    }}
-                  />
-                </label>
-
-                {loginError && <p className="login-error">{loginError}</p>}
-                {registerSuccess && <p className="login-success">{registerSuccess}</p>}
-                <button className="primary-action" type="submit">
-                  <LockKeyhole size={18} aria-hidden="true" />
-                  Login to {loginPortal === 'employer' ? 'Employer' : 'Employee'} portal
-                </button>
-              </form>
-            </>
-          )}
-
-          {authView === 'register' && (
-            <form
-              className="login-form"
-              onSubmit={(event) => {
-                event.preventDefault()
-                handleRegister()
-              }}
-            >
-              <div className="login-role-switcher">
-                <button
-                  className={registerPortal === 'employer' ? 'active' : ''}
-                  disabled={employerSetupComplete}
-                  onClick={() => {
-                    setRegisterPortal('employer')
-                    setRegisterError('')
-                  }}
-                  type="button"
-                >
-                  <Building2 size={17} aria-hidden="true" />
-                  {employerSetupComplete ? 'Employer set up' : 'First employer'}
-                </button>
-                <button
-                  className={registerPortal === 'employee' ? 'active' : ''}
-                  onClick={() => {
-                    setRegisterPortal('employee')
-                    setRegisterError('')
-                  }}
-                  type="button"
-                >
-                  <Bell size={17} aria-hidden="true" />
-                  New employee
-                </button>
-              </div>
-              {employerSetupComplete && (
-                <p className="login-helper">
-                  New users register as employees. An employer can promote them from Home.
-                </p>
-              )}
-
-              <label>
-                Name
-                <input
-                  autoComplete="name"
-                  placeholder="Enter full name"
-                  value={registerName}
-                  onChange={(event) => {
-                    setRegisterName(event.target.value)
-                    setRegisterError('')
-                  }}
-                />
-              </label>
-
-              <label>
-                Email
-                <input
-                  autoComplete="email"
-                  placeholder="name@company.com"
-                  type="email"
-                  value={registerEmail}
-                  onChange={(event) => {
-                    setRegisterEmail(event.target.value)
-                    setRegisterError('')
-                  }}
-                />
-              </label>
-
-              <label>
-                Password
-                <input
-                  autoComplete="new-password"
-                  minLength={6}
-                  placeholder="Create password"
-                  type="password"
-                  value={registerPassword}
-                  onChange={(event) => {
-                    setRegisterPassword(event.target.value)
-                    setRegisterError('')
-                  }}
-                />
-              </label>
-              <p className="field-hint">Use at least 6 characters. Avoid spaces at the start or end.</p>
-
-              {registerError && <p className="login-error">{registerError}</p>}
-
-              <button className="primary-action" type="submit">
-                <Plus size={18} aria-hidden="true" />
-                Add {registerPortal === 'employer' ? 'employer' : 'employee'}
-              </button>
-            </form>
-          )}
-
-          <div className="login-hint">
-            <strong>For testing:</strong>
-            <span>Accounts and shared inventory are securely synchronized through Supabase.</span>
-          </div>
-        </section>
-      </main>
+      <AuthScreen
+        authView={authView}
+        employerSetupComplete={employerSetupComplete}
+        loginEmail={loginEmail}
+        loginError={loginError}
+        loginPassword={loginPassword}
+        loginPortal={loginPortal}
+        registerEmail={registerEmail}
+        registerError={registerError}
+        registerName={registerName}
+        registerPassword={registerPassword}
+        registerPortal={registerPortal}
+        registerSuccess={registerSuccess}
+        themeMode={themeMode}
+        onAuthViewChange={setAuthView}
+        onLogin={handleLogin}
+        onLoginEmailChange={(value) => { setLoginEmail(value); setLoginError('') }}
+        onLoginPasswordChange={(value) => { setLoginPassword(value); setLoginError('') }}
+        onLoginPortalChange={handlePortalChoice}
+        onRegister={handleRegister}
+        onRegisterEmailChange={(value) => { setRegisterEmail(value); setRegisterError('') }}
+        onRegisterNameChange={(value) => { setRegisterName(value); setRegisterError('') }}
+        onRegisterPasswordChange={(value) => { setRegisterPassword(value); setRegisterError('') }}
+        onRegisterPortalChange={(portal) => { setRegisterPortal(portal); setRegisterError('') }}
+      />
     )
   }
-
   return (
     <main className={`app-shell ${themeMode === 'dark' ? 'dark-mode' : ''}`}>
-      <div className="toast-stack" aria-live="polite" aria-atomic="true">
-        {toasts.map((toast) => (
-          <div className={`app-toast ${toast.tone}`} key={toast.id}>
-            {toast.tone === 'success' ? (
-              <CheckCircle2 size={17} aria-hidden="true" />
-            ) : toast.tone === 'error' ? (
-              <AlertCircle size={17} aria-hidden="true" />
-            ) : (
-              <Bell size={17} aria-hidden="true" />
-            )}
-            <span>{toast.message}</span>
-          </div>
-        ))}
-      </div>
+      <ToastStack toasts={toasts} />
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
           <img
@@ -4304,7 +3811,7 @@ function App() {
                     <div><span>Missing</span><strong>{item.missing}</strong></div>
                   </div>
                   <div className="status-cell">
-                    <Badge tone={statusTone(statusForItem(item))}>{statusForItem(item)}</Badge>
+                    <Badge tone={inventoryStatusTone(statusForItem(item))}>{statusForItem(item)}</Badge>
                   </div>
                   <div className="inventory-asset-container">
                     <AssetIdPreview
@@ -4613,277 +4120,6 @@ function App() {
       </section>
     </main>
   )
-}
-
-function FlowStep({ index, text, title }: { index: number; text: string; title: string }) {
-  return (
-    <div className="flow-step">
-      <span>{index}</span>
-      <div>
-        <strong>{title}</strong>
-        <p>{text}</p>
-      </div>
-    </div>
-  )
-}
-
-function TeamChips({ employees }: { employees: string[] }) {
-  if (employees.length === 0) {
-    return <div className="team-chips"><span>Unassigned</span></div>
-  }
-
-  return (
-    <div className="team-chips" aria-label="Assigned staff">
-      {employees.map((employee) => (
-        <span key={employee}>{employee}</span>
-      ))}
-    </div>
-  )
-}
-
-function EventSummary({
-  active,
-  event,
-  inventoryById,
-  onSelect,
-}: {
-  active?: boolean
-  event: EventRecord
-  inventoryById: Record<string, InventoryItem>
-  onSelect: () => void
-}) {
-  return (
-    <button className={`event-card ${active ? 'active' : ''}`} onClick={onSelect} type="button">
-      <div>
-        <strong>{event.title}</strong>
-        <span>
-          {event.id} - {event.type} - {formatEventSchedule(event)}
-        </span>
-        <span>
-          {event.location}
-        </span>
-        <TeamChips employees={event.assignedEmployees} />
-      </div>
-      <Badge tone={eventStatusTone(event.status)}>{eventStatusLabel(event.status)}</Badge>
-      <p>
-        {event.reservations
-          .map((reservation) => {
-            const item = inventoryById[reservation.itemId]
-            return item ? `${reservation.quantity} ${item.name}` : null
-          })
-          .filter(Boolean)
-          .join(', ')}
-      </p>
-    </button>
-  )
-}
-
-function EventProgress({ status }: { status: EventStatus }) {
-  const currentStep = eventStepIndex(status)
-
-  return (
-    <div className="event-progress" aria-label={`Event status: ${eventStatusLabel(status)}`}>
-      {eventFlowSteps.map((step, index) => (
-        <div
-          className={`progress-step ${index <= currentStep ? 'complete' : ''} ${
-            index === currentStep ? 'current' : ''
-          }`}
-          key={`${step.label}-${index}`}
-        >
-          <span>{index + 1}</span>
-          <strong>{step.label}</strong>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ReturnReportSummary({
-  event,
-  inventoryById,
-}: {
-  event: EventRecord
-  inventoryById: Record<string, InventoryItem>
-}) {
-  const reportLines = event.reservations
-    .map((reservation) => {
-      const item = inventoryById[reservation.itemId]
-      const report = event.returnReport?.[reservation.itemId]
-      return item && report ? { item, reservation, report } : null
-    })
-    .filter(Boolean) as Array<{
-      item: InventoryItem
-      reservation: Reservation
-      report: ReturnLine
-    }>
-
-  if (reportLines.length === 0) {
-    return null
-  }
-
-  const totalMissing = reportLines.reduce((total, line) => total + line.report.missing, 0)
-  const totalDamaged = reportLines.reduce((total, line) => total + line.report.damaged, 0)
-
-  return (
-    <section className="return-summary" aria-label="Submitted return report">
-      <div className="section-heading compact-heading">
-        <div>
-          <h2>Return report submitted</h2>
-          <p>
-            Employer review: {totalMissing} missing, {totalDamaged} damaged.
-          </p>
-          <p>{formatEventSchedule(event)}</p>
-          <p>Packed by: {event.packedBy || 'Not recorded'} - Checked out by: {event.checkedOutBy || 'Not recorded'} - Report submitted by: {event.returnReportBy || 'Not recorded'}</p>
-        </div>
-        <Badge tone={event.returnReviewed ? 'success' : totalMissing > 0 || totalDamaged > 0 ? 'warning' : 'info'}>
-          {event.returnReviewed ? 'Employer reviewed' : 'Ready for review'}
-        </Badge>
-      </div>
-      {event.returnPhotos.length > 0 && (
-        <div className="return-summary-photos">
-          <strong>Return photos</strong>
-          <div className="packing-photo-grid">
-            {event.returnPhotos.map((photo, index) => (
-              <figure className="packing-photo" key={photo.id}>
-                <a href={photo.signedUrl} rel="noreferrer" target="_blank">
-                  <img alt={`Return report photo ${index + 1}`} src={photo.signedUrl} />
-                </a>
-                <figcaption>
-                  <span>{photo.uploadedBy}</span>
-                  <small>{photo.uploadedAt}</small>
-                </figcaption>
-              </figure>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="return-summary-list">
-        {reportLines.map(({ item, reservation, report }) => (
-          <div className="return-summary-row" key={item.id}>
-            <strong>{item.name}</strong>
-            <span>Checked out: {reservation.quantity}</span>
-            <span>Returned: {report.returned}</span>
-            <span>Damaged: {report.damaged}</span>
-            <span>Missing: {report.missing}</span>
-            <p>{report.remarks || 'No remarks'}</p>
-            <div className="asset-summary-items">
-              {reservation.selectedAssetIds.map((assetId) => {
-                const assetLine = event.assetReturnReport?.[assetId]
-                const status = assetLine?.status ?? 'Returned'
-                return (
-                  <span key={assetId}>
-                    <strong>{assetId}</strong>
-                    <Badge tone={assetJourneyTone(status)}>{status}</Badge>
-                    {assetLine?.remarks && <small>{assetLine.remarks}</small>}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function AssetIdPreview({
-  assetConditions,
-  assetIds,
-  itemName,
-  unidentifiedIssueCount,
-  onAssetIdChange,
-  onAssetRemarksChange,
-  onAssetStatusChange,
-  onResolveIssue,
-}: {
-  assetConditions?: Record<string, AssetCondition>
-  assetIds: string[]
-  itemName?: string
-  unidentifiedIssueCount?: number
-  onAssetIdChange?: (assetIndex: number, value: string) => void
-  onAssetRemarksChange?: (assetId: string, remarks: string) => void
-  onAssetStatusChange?: (assetId: string, status: 'Available' | 'Damaged' | 'Missing') => void
-  onResolveIssue?: (assetId: string) => void
-}) {
-  if (assetIds.length === 0) return <span className="asset-id-summary">IDs assigned after confirmation</span>
-
-  if (onAssetIdChange) {
-    const issueCount = Object.keys(assetConditions ?? {}).length
-    return (
-      <details className="asset-preview asset-preview-inline asset-editor">
-        <summary className="asset-preview-heading">
-          <strong>Manage item IDs</strong>
-          <span>{assetIds.length} items{issueCount ? ' - ' + issueCount + ' issues' : ''}</span>
-        </summary>
-        <div className="asset-editor-content">
-          {Boolean(unidentifiedIssueCount) && (
-            <p className="unidentified-issue-warning">
-              {unidentifiedIssueCount} issue{unidentifiedIssueCount === 1 ? '' : 's'} need an item ID. Set the correct item status below.
-            </p>
-          )}
-          <div className="asset-preview-edit-grid">
-          {assetIds.map((assetId, assetIndex) => {
-            const condition = assetConditions?.[assetId]
-            return (
-              <div className={'asset-id-field ' + (condition ? condition.status.toLowerCase() : '')} key={assetIndex}>
-                <div className="asset-id-control">
-                  <input aria-label={(itemName || 'Item') + ' ID ' + (assetIndex + 1)} value={assetId} onChange={(event) => onAssetIdChange(assetIndex, event.target.value)} />
-                  {onAssetStatusChange && (
-                    <select aria-label={assetId + ' status'} value={condition?.status ?? 'Available'} onChange={(event) => onAssetStatusChange(assetId, event.target.value as 'Available' | 'Damaged' | 'Missing')}>
-                      <option>Available</option>
-                      <option>Damaged</option>
-                      <option>Missing</option>
-                    </select>
-                  )}
-                </div>
-                {condition && (
-                  <div className="asset-condition">
-                    <Badge tone={condition.status === 'Missing' ? 'danger' : 'warning'}>{condition.status}</Badge>
-                    {onAssetRemarksChange ? (
-                      <input className="asset-condition-note" placeholder="Add issue note" value={condition.remarks} onChange={(event) => onAssetRemarksChange(assetId, event.target.value)} />
-                    ) : (
-                      <small title={condition.eventTitle + ' - reported by ' + condition.reportedBy}>{condition.remarks || condition.eventId}</small>
-                    )}
-                    {onResolveIssue && <button aria-label={'Mark ' + assetId + ' resolved'} onClick={() => onResolveIssue(assetId)} title="Mark resolved" type="button"><CheckCircle2 size={14} aria-hidden="true" /></button>}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-          </div>
-        </div>
-      </details>
-    )
-  }
-
-  return (
-    <details className="asset-preview">
-      <summary>{assetIds.length === 1 ? assetIds[0] : 'View ' + assetIds.length + ' item IDs'}</summary>
-      <div>{assetIds.map((assetId) => <span key={assetId}>{assetId}</span>)}</div>
-    </details>
-  )
-}
-
-function Badge({
-  children,
-  tone,
-}: {
-  children: string | number
-  tone: 'success' | 'danger' | 'warning' | 'info' | 'neutral'
-}) {
-  return <span className={`badge ${tone}`}>{children}</span>
-}
-
-function statusTone(status: InventoryStatus) {
-  if (status === 'Available') return 'success'
-  if (status === 'Reserved' || status === 'In Use') return 'info'
-  if (status === 'Damaged' || status === 'Missing') return 'danger'
-  return 'neutral'
-}
-
-function InventoryIcon({ category }: { category: string }) {
-  if (category === 'Computing') return <Laptop size={18} aria-hidden="true" />
-  return <Wrench size={18} aria-hidden="true" />
 }
 
 export default App
