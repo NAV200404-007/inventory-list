@@ -47,6 +47,21 @@ export type PackingPhoto = {
   uploadedAt: string
 }
 
+export type EventBoxPart = {
+  id: string
+  name: string
+  expectedQuantity: number | null
+  returnedQuantity: number | null
+  expectedQuantityEditable?: boolean
+  note?: string
+}
+
+export type EventBoxCategory = {
+  id: string
+  name: string
+  parts: EventBoxPart[]
+}
+
 export type EventRecord = {
   recordId: string
   id: string
@@ -54,6 +69,7 @@ export type EventRecord = {
   type: string
   location: string
   comments: string
+  boxChecklist: EventBoxCategory[]
   start: string
   startTime: string
   end: string

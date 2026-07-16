@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { EventBoxCategory } from '../types'
 
 type PortalMode = 'employer' | 'employee'
 type Role = 'Employer' | 'Inventory Manager' | 'Employee'
@@ -38,6 +39,7 @@ export type OperationalEvent = {
   type: string
   location: string
   comments: string
+  boxChecklist: EventBoxCategory[]
   start: string
   startTime: string
   end: string
@@ -124,6 +126,7 @@ type EventRow = {
   event_type: string
   location: string
   comments: string | null
+  box_checklist: EventBoxCategory[] | null
   starts_at: string
   ends_at: string
   status: EventStatus
@@ -185,7 +188,7 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
     client.from('profiles').select('id,name,role,portal'),
     client.from('inventory_items').select('id,name,category,unit,location,total').order('name'),
     client.from('inventory_assets').select('id,inventory_item_id,asset_code,active,status,issue_remarks,issue_event_id,issue_reported_by').order('asset_code'),
-    client.from('events').select('id,event_code,title,event_type,location,comments,starts_at,ends_at,status,packed_by,checkout_approved,checked_out_by,return_report_by,return_reviewed,return_reviewed_by').order('starts_at'),
+    client.from('events').select('id,event_code,title,event_type,location,comments,box_checklist,starts_at,ends_at,status,packed_by,checkout_approved,checked_out_by,return_report_by,return_reviewed,return_reviewed_by').order('starts_at'),
     client.from('event_staff').select('event_id,profile_id'),
     client.from('event_requirements').select('event_id,inventory_item_id,quantity'),
     client.from('event_assets').select('event_id,asset_id,packed,return_status,return_remarks'),
@@ -259,6 +262,7 @@ export async function loadOperationalData(client: SupabaseClient): Promise<Opera
     return {
       recordId: event.id, id: event.event_code, title: event.title, type: event.event_type,
       location: event.location, comments: event.comments ?? '', start: starts.date, startTime: starts.time, end: ends.date, endTime: ends.time,
+      boxChecklist: event.box_checklist ?? [],
       assignedEmployees, status: event.status, reservations,
       packingProgress: Object.fromEntries(reservations.map((reservation) => [reservation.itemId, reservation.selectedAssetIds.length > 0 && reservation.selectedAssetIds.every((code) => eventAssetRows.find((row) => assetById.get(row.asset_id)?.asset_code === code)?.packed)])),
       packedAssetIds: Object.fromEntries(eventAssetRows.map((row) => [assetById.get(row.asset_id)?.asset_code ?? '', row.packed])),
@@ -320,6 +324,7 @@ export async function syncOperationalData(
       event_type: event.type,
       location: event.location,
       comments: event.comments,
+      box_checklist: event.boxChecklist,
       starts_at: toTimestamp(event.start, event.startTime),
       ends_at: toTimestamp(event.end, event.endTime),
       status: event.status,
@@ -336,6 +341,7 @@ export async function syncOperationalData(
       ? client.from('events').upsert(eventRow)
       : client.from('events').update({
           status: event.status,
+          box_checklist: event.boxChecklist,
           packed_by: event.packedBy ? profileId.get(event.packedBy) ?? null : null,
           checkout_approved: event.checkoutApproved,
           checked_out_by: event.checkedOutBy ? profileId.get(event.checkedOutBy) ?? null : null,

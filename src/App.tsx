@@ -29,6 +29,7 @@ import {
 import './App.css'
 import { Badge } from './components/Badge'
 import { AuthLoadingScreen, AuthScreen } from './components/AuthScreen'
+import { EventBoxChecklist } from './components/EventBoxChecklist'
 import { EventProgress, EventSummary, FlowStep, ReturnReportSummary, TeamChips } from './components/EventViews'
 import { AssetIdPreview, InventoryIcon } from './components/InventoryViews'
 import { ToastStack } from './components/ToastStack'
@@ -36,6 +37,7 @@ import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadOperationalData, syncInventoryData, syncOperationalData } from './lib/operationalData'
 import { compressPhoto } from './lib/imageCompression'
 import { exportPackingListPdf, exportReturnReportPdf } from './lib/reportExport'
+import { createEventBoxChecklist } from './lib/eventBoxChecklist'
 import {
   changedRecordIds,
   createEventRecordId,
@@ -225,6 +227,7 @@ function createEventDraft(events: EventRecord[]): EventRecord {
     type: 'VEX IQ workshop',
     location: '',
     comments: '',
+    boxChecklist: createEventBoxChecklist(),
     start: date,
     startTime: '09:00',
     end: date,
@@ -1335,6 +1338,15 @@ function App() {
         record.recordId === eventId ? { ...record, comments: value } : record,
       ),
     )
+  }
+
+  const saveEventBoxChecklist = (eventId: string, boxChecklist: EventRecord['boxChecklist']) => {
+    const eventTitle = events.find((event) => event.recordId === eventId)?.title ?? 'Event'
+    setEvents((records) => records.map((record) =>
+      record.recordId === eventId ? { ...record, boxChecklist } : record,
+    ))
+    addLog('Saved event box checklist', `${eventTitle} box parts were checked.`)
+    showToast('Event box checklist saved.', 'success')
   }
 
   const rebuildEventReservationAssets = (event: EventRecord, reservations: Reservation[]) =>
@@ -3317,6 +3329,13 @@ function App() {
                       )}
                     </section>
                   )}
+                  <EventBoxChecklist
+                    checklist={selectedEvent.boxChecklist}
+                    key={`${selectedEvent.recordId}:${JSON.stringify(selectedEvent.boxChecklist)}`}
+                    onSave={(boxChecklist) =>
+                      saveEventBoxChecklist(selectedEvent.recordId, boxChecklist)
+                    }
+                  />
                   <div
                     className="packing-progress"
                     aria-label={`${selectedEventPackedCount} of ${selectedEventPackingTotal} packing items checked`}

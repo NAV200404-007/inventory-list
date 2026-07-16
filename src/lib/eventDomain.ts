@@ -1,4 +1,5 @@
 import type { EventRecord, EventStatus } from '../types'
+import { normalizeEventBoxChecklist } from './eventBoxChecklist'
 
 export function normalizeEventStatus(status: string): EventStatus {
   if (status === 'In Use') return 'Checked Out'
@@ -36,6 +37,7 @@ export function normalizeEventRecord(event: EventRecord & { staff?: string; reco
     recordId: event.recordId ?? createEventRecordId(),
     assignedEmployees,
     comments: event.comments ?? '',
+    boxChecklist: normalizeEventBoxChecklist(event.boxChecklist),
     startTime: event.startTime ?? '09:00',
     endTime: event.endTime ?? '17:00',
     packingProgress: event.packingProgress ?? {},
